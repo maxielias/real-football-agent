@@ -221,6 +221,7 @@ Trust your judgment and instinct!
                     print(f"Remaining funds: ${self.agent.money:,}")
                 else:
                     print("\n✗ Insufficient funds!")
+                    self.agent.actions_remaining += 1  # Refund the action
             else:
                 print("\nSigning cancelled.")
                 self.agent.actions_remaining += 1  # Refund the action

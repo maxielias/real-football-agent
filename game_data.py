@@ -253,9 +253,29 @@ def get_club_contacts():
             "director": "David Gill",
             "coach": "Thomas Edwards"
         },
+        "Bayern Munich": {
+            "director": "Karl-Heinz Rummenigge",
+            "coach": "Hans-Dieter Flick"
+        },
+        "Paris Saint-Germain": {
+            "director": "Leonardo Araújo",
+            "coach": "Christophe Galtier"
+        },
+        "Ajax Amsterdam": {
+            "director": "Marc Overmars",
+            "coach": "Erik ten Hag"
+        },
         "Porto FC": {
             "director": "António Silva",
             "coach": "João Santos"
+        },
+        "Celtic FC": {
+            "director": "Peter Lawwell",
+            "coach": "Brendan Rodgers"
+        },
+        "Sporting Lisbon": {
+            "director": "Hugo Viana",
+            "coach": "Rúben Amorim"
         }
     }
     return contacts
