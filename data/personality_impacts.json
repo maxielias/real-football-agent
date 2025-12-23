@@ -1,0 +1,83 @@
+{
+  "levels": {
+    "Very High": {"performance": 0.025, "cohesion": 0.006, "conflict": 0.008},
+    "High": {"performance": 0.018, "cohesion": 0.004, "conflict": 0.005},
+    "Medium": {"performance": 0.012, "cohesion": 0.003, "conflict": 0.0035},
+    "Moderate": {"performance": 0.010, "cohesion": 0.0025, "conflict": 0.003},
+    "Low": {"performance": -0.008, "cohesion": -0.002, "conflict": 0.0015},
+    "Very Low": {"performance": -0.015, "cohesion": -0.004, "conflict": 0.0005}
+  },
+  "defaults": {
+    "Best": {"performance_level": "Very High", "cohesion_level": "High", "conflict_level": "Very Low"},
+    "Good": {"performance_level": "High", "cohesion_level": "Moderate", "conflict_level": "Low"},
+    "Neutral": {"performance_level": "Moderate", "cohesion_level": "Moderate", "conflict_level": "Medium"},
+    "Bad": {"performance_level": "Low", "cohesion_level": "Low", "conflict_level": "Medium"},
+    "Worst": {"performance_level": "Very Low", "cohesion_level": "Very Low", "conflict_level": "High"}
+  },
+  "personalities": {
+    "Leader": {"cohesion_level":"High","conflict_level":"Low","performance_level":"High"},
+    "Perfectionist": {"cohesion_level":"Moderate","conflict_level":"Medium","performance_level":"Very High"},
+    "Resolute": {"cohesion_level":"High","conflict_level":"Low","performance_level":"High"},
+    "Temperamental": {"cohesion_level":"Low","conflict_level":"High","performance_level":"Unpredictable"},
+    "Driven": {"cohesion_level":"Moderate","conflict_level":"Low","performance_level":"High"},
+    "Light-Hearted": {"cohesion_level":"Moderate","conflict_level":"Low","performance_level":"Average"},
+    "Lazy": {"cohesion_level":"Very Low","conflict_level":"Medium","performance_level":"Low"},
+    "Ambitious": {"cohesion_level":"High","conflict_level":"Medium","performance_level":"Very High"},
+    "Unambitious": {"cohesion_level":"Low","conflict_level":"Medium","performance_level":"Low"}
+  },
+  "performance_alias": {
+    "Average": "Moderate",
+    "Unpredictable": "Moderate"
+  },
+  "caps": {
+    "performance_max": 0.03,
+    "performance_min": -0.03,
+    "cohesion_weekly_cap": 0.006,
+    "cohesion_monthly_cap": 0.02,
+    "conflict_base_weekly": 0.001
+  }
+  ,
+  "development": {
+    "weekly_base": {
+      "Very High": 0.012,
+      "High": 0.008,
+      "Moderate": 0.005,
+      "Medium": 0.005,
+      "Low": 0.003,
+      "Very Low": 0.0015
+    },
+    "caps": {
+      "weekly_max": 0.02,
+      "weekly_min": 0.0005
+    },
+    "boosts": {
+      "positive_performance": 0.004,
+      "negative_performance": -0.003,
+      "training_quality_scale": 0.0002
+    }
+  },
+  "renewal": {
+    "base_by_personality": {
+      "Ambitious": 0.10,
+      "Resolute": 0.08,
+      "Temperamental": 0.04
+    },
+    "base_by_category": {
+      "Best": 0.09,
+      "Good": 0.07,
+      "Neutral": 0.06,
+      "Bad": 0.05,
+      "Worst": 0.04
+    },
+    "weights": {
+      "cohesion_index": 0.001,
+      "meets_objective": 0.02,
+      "performance_diff": 0.01,
+      "player_morale": 0.001
+    },
+    "caps": {
+      "min": 0.01,
+      "max": 0.30
+    }
+  }
+}
