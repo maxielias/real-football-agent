@@ -9,7 +9,7 @@ El sistema de ratings calcula el puntaje de un jugador basado en **9 atributos t
 Cada jugador tiene 9 atributos técnicos en escala 1-20:
 
 | Atributo | Código | Descripción |
-|----------|--------|-------------|
+| ---------- | -------- | ------------- |
 | **Defending** | DEF | Capacidad defensiva, tackles, marcaje |
 | **Aerial** | AER | Juego aéreo, cabezazos |
 | **Passing** | PAS | Precisión y visión de pase |
@@ -23,7 +23,7 @@ Cada jugador tiene 9 atributos técnicos en escala 1-20:
 ### Clasificaciones
 
 | Rating | Clasificación |
-|--------|---------------|
+| -------- | --------------- |
 | 1-6 | **Terrible** |
 | 7-9 | **Poor** |
 | 10-14 | **Average** |
@@ -37,16 +37,19 @@ El sistema soporta **9 posiciones principales**, cada una con ponderadores espec
 ### Posiciones Defensivas
 
 #### **CB (Center Back / Centro de Defensa)**
+
 - **Prioridades**: Defending (1.10%), Aerial (0.83%), Intelligence (1.59%)
 - **Menos importante**: Shooting (0.00%), Technical (0.08%)
 - **Características**: Especialista en defensa aérea y terrestre
 
 #### **FB (Full Back / Lateral)**
+
 - **Prioridades**: Intelligence (1.23%), Speed (0.99%), Defending (0.77%)
 - **Menos importante**: Shooting (0.00%), Aerial (0.02%)
 - **Características**: Combinación de defensa y velocidad
 
 #### **WB (Wing Back / Carrilero)**
+
 - **Prioridades**: Speed (1.26%), Intelligence (0.98%), Physical (0.71%)
 - **Menos importante**: Shooting (0.01%), Aerial (0.00%)
 - **Características**: Muy ofensivo, prioriza velocidad
@@ -54,16 +57,19 @@ El sistema soporta **9 posiciones principales**, cada una con ponderadores espec
 ### Posiciones de Mediocampo
 
 #### **DM (Defensive Midfielder / Mediocentro Defensivo)**
+
 - **Prioridades**: Intelligence (1.66%), Mental (0.93%), Defending (0.75%)
 - **Menos importante**: Aerial (0.01%), Shooting (0.09%)
 - **Características**: Cerebro defensivo del equipo
 
 #### **CM (Central Midfielder / Mediocentro)**
+
 - **Prioridades**: Intelligence (1.62%), Technical (0.95%), Mental (0.77%)
 - **Menos importante**: Aerial (0.00%), Shooting (0.05%)
 - **Características**: Organizador y creador de juego
 
 #### **SM (Side Midfielder / Interior)**
+
 - **Prioridades**: Technical (1.03%), Intelligence (1.06%), Speed (0.90%)
 - **Menos importante**: Defending (0.13%), Aerial (0.00%)
 - **Características**: Creativo desde los costados
@@ -71,16 +77,19 @@ El sistema soporta **9 posiciones principales**, cada una con ponderadores espec
 ### Posiciones Ofensivas
 
 #### **WF (Wing Forward / Extremo)**
+
 - **Prioridades**: Speed (1.44%), Technical (1.23%), Shooting (1.11%)
 - **Menos importante**: Defending (0.00%), Aerial (0.08%)
 - **Características**: Velocidad y desborde
 
 #### **AM (Attacking Midfielder / Mediapunta)**
+
 - **Prioridades**: Intelligence (1.78%), Technical (1.40%), Passing (0.45%)
 - **Menos importante**: Defending (0.00%), Aerial (0.00%)
 - **Características**: Enganche, creador de juego ofensivo
 
 #### **FW (Forward / Delantero)**
+
 - **Prioridades**: Intelligence (1.23%), Speed (0.94%), Technical (0.79%)
 - **Menos importante**: Defending (0.00%), Passing (0.09%)
 - **Características**: Finalizador, goleador
@@ -88,27 +97,33 @@ El sistema soporta **9 posiciones principales**, cada una con ponderadores espec
 ## Cálculo de Ratings
 
 ### Current Rating (Rating Actual)
-```
+
+```text
 Rating = Σ (Atributo × Ponderador de Posición)
 ```
 
 Ejemplo para un CM con todos los atributos en 15:
-```
+
+```text
 Rating = (15 × 0.0027) + (15 × 0.0000) + (15 × 0.0061) + 
-         (15 × 0.0095) + (15 × 0.0035) + (15 × 0.0039) + 
-         (15 × 0.0005) + (15 × 0.0077) + (15 × 0.0162)
-       = 0.75
+                 (15 × 0.0095) + (15 × 0.0035) + (15 × 0.0039) + 
+                 (15 × 0.0005) + (15 × 0.0077) + (15 × 0.0162)
+             = 0.75
 ```
 
 ### Potential Rating (Rating Potencial)
+
 El rating potencial se calcula como:
+
 - **Mínimo**: Current Rating + 0.01
 - **Máximo**: Basado en el potencial teórico con mejora de atributos
 - Se añade aleatoriedad para simular variabilidad en desarrollo
 
 ### Overall Rating (Rating General)
+
 Calculado usando los ponderadores AVG (promedio de todas las posiciones):
-```
+
+```text
 AVG Weights:
 - DEF: 0.39%, AER: 0.14%, PAS: 0.37%
 - TEC: 0.76%, SPD: 0.80%, PHY: 0.48%
@@ -116,6 +131,7 @@ AVG Weights:
 ```
 
 ### Rating Máximo Posible
+
 Con todos los atributos en 20, el rating máximo es **1.00** para cualquier posición.
 
 ## Uso del Sistema
@@ -189,6 +205,7 @@ display_squad_summary(squad)
 ## Ejemplos por Posición
 
 ### Centro Defensivo Elite (CB)
+
 ```python
 cb = Player("Sergio Ramos", 28, "Center Back")
 cb.set_technical_attributes(
@@ -206,6 +223,7 @@ cb.set_technical_attributes(
 ```
 
 ### Mediapunta de Clase Mundial (AM)
+
 ```python
 am = Player("Kevin De Bruyne", 27, "Attacking Midfielder")
 am.set_technical_attributes(
@@ -223,6 +241,7 @@ am.set_technical_attributes(
 ```
 
 ### Delantero Goleador (FW)
+
 ```python
 fw = Player("Robert Lewandowski", 29, "Forward")
 fw.set_technical_attributes(
@@ -263,7 +282,7 @@ best = player.get_best_positions(3)
 El sistema reconoce múltiples nombres para cada posición:
 
 | Nombres Reconocidos | Posición |
-|---------------------|----------|
+| --------------------- | ---------- |
 | Goalkeeper, GK | CB* |
 | Center Back, Centre Back, CB, Defender | CB |
 | Full Back, Fullback, FB, LB, RB, Left Back, Right Back | FB |
@@ -280,17 +299,20 @@ El sistema reconoce múltiples nombres para cada posición:
 ## Herramientas de Generación
 
 ### Generador de Jugadores
+
 ```bash
 python player_generator.py
 ```
 
 Opciones:
+
 1. Generar jugador aleatorio
-2-6. Generar escuadra por calidad (poor/average/good/excellent/world_class)
-7. Creador interactivo
-8. Salir
+2. Generar escuadra por calidad (poor/average/good/excellent/world_class)
+3. Creador interactivo
+4. Salir
 
 ### Tests del Sistema
+
 ```bash
 python test_rating_system.py
 ```
@@ -300,7 +322,7 @@ Ejecuta pruebas completas del sistema de ratings con ejemplos de todos los tipos
 ## Niveles de Calidad
 
 | Nivel | Rating Esperado | Descripción |
-|-------|-----------------|-------------|
+| ------- | ----------------- | ------------- |
 | **Poor** | 0.35-0.50 | Jugador de categorías inferiores |
 | **Average** | 0.50-0.70 | Jugador profesional estándar |
 | **Good** | 0.70-0.85 | Jugador de buen nivel |
@@ -333,24 +355,30 @@ print(player.describe())
 ## Notas Técnicas
 
 ### Suma de Ponderadores
+
 Todos los ponderadores de cada posición suman **0.05** (5%), lo que significa:
+
 - Rating máximo (todos 20s) = 20 × 0.05 = **1.00**
 - Rating con todos en 10 = 10 × 0.05 = **0.50**
 
 ### Cálculo de Potencial
+
 El potencial se calcula considerando:
+
 1. Rating actual como base
 2. Espacio de mejora hasta el máximo teórico
 3. Factor aleatorio para variabilidad realista
 4. Multiplicador basado en rating actual (jugadores con mejor base tienen más potencial)
 
 ### Especialización vs Generalización
+
 - **Especialistas**: Atributos focalizados en las necesidades de su posición
 - **Generalistas**: Atributos balanceados, versátiles en múltiples posiciones
 
 ## Conclusión
 
 Este sistema proporciona:
+
 - ✅ Evaluación precisa basada en posición
 - ✅ Cálculo de potencial realista
 - ✅ Identificación de mejores posiciones

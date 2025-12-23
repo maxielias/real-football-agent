@@ -33,6 +33,9 @@ class FootballAgentGame:
         self.club_rosters = {}  # {club_name: [player_dict]}
         self.growth_log = []  # Track weekly growth events
         self.renewal_log = []  # Track renewal intent at season end
+        self.transfer_log = []  # Track transfer offers and decisions
+        self.weekly_event_log = []  # Track weekly random events
+        self.event_occurred_this_week = False  # Only one event per week
         self.running = True
         
     def start_game(self):
@@ -117,6 +120,8 @@ Trust your judgment and instinct!
     
     def process_weekly_events(self):
         """Process events that happen each week"""
+        current_week_index = max(0, self.agent.week - 1)
+
         # Show commission earned
         total_commission = 0
         for client in self.agent.clients:
@@ -131,6 +136,477 @@ Trust your judgment and instinct!
         for client in self.agent.clients:
             if client.signed and client.contract_length <= 4 and client.contract_length > 0:
                 print(f"⚠ {client.name}'s contract expires in {client.contract_length} weeks!")
+
+        # Transfer window logic: generate and review offers for clients
+        if self._is_transfer_window(current_week_index):
+            self._generate_transfer_offers_for_clients(current_week_index)
+            self._handle_transfer_offers_prompt()
+        
+        # Weekly random situation (only one per week, 40% chance)
+        if not self.event_occurred_this_week and self.agent.clients and random.random() < 0.40:
+            self._generate_weekly_situation()
+
+    # ========== TRANSFER WINDOW HELPERS ==========
+
+    def _is_transfer_window(self, week_index: int) -> bool:
+        """Return True if the current phase is a transfer window."""
+        if week_index < 0 or week_index >= len(self.schedule):
+            return False
+        phase = self.schedule[week_index].get("phase", "")
+        return phase.startswith("Pretemporada") or phase.startswith("Descanso")
+
+    def _advance_offer_deadlines(self):
+        """Reduce offer deadlines and drop expired ones."""
+        kept = []
+        for offer in self.agent.pending_offers:
+            offer["expires_in_weeks"] -= 1
+            if offer["expires_in_weeks"] > 0:
+                kept.append(offer)
+            else:
+                self.transfer_log.append({**offer, "status": "expired", "week": self.agent.week})
+        self.agent.pending_offers = kept
+
+    def _create_transfer_offer(self, player: Player) -> dict:
+        """Build a single transfer offer for a player."""
+        candidates = [c for c in self.clubs if c.name != player.club]
+        if not candidates:
+            return {}
+
+        club = random.choice(candidates)
+        overall = player.current_overall_score or int(player.current_rating * 100)
+        base_fee = max(10000, player.transfer_value or overall * 500)
+        is_free = not bool(player.club)
+
+        offer = {
+            "club": club.name,
+            "player": player,
+            "player_name": player.name,
+            "fee": 0 if is_free else int(base_fee * random.uniform(0.85, 1.15)),
+            "wage": max(1200, int(overall * random.uniform(120, 200))),
+            "contract_weeks": random.randint(52, 156),  # 1-3 seasons
+            "expires_in_weeks": 2,
+            "status": "pending",
+        }
+        return offer
+
+    def _generate_transfer_offers_for_clients(self, week_index: int):
+        """Create transfer offers for agent-managed players during window or free agents anytime."""
+        self._advance_offer_deadlines()
+
+        new_offers = []
+        is_transfer_window = self._is_transfer_window(week_index)
+        
+        # First: guarantee offers for free agents (no club) - ANY TIME
+        for client in self.agent.clients:
+            if not client.club:  # Free agent (removed "and not client.signed" to allow any free agent)
+                # Free agents get offers even outside transfer window
+                existing_offers = [o for o in self.agent.pending_offers if o.get("player") is client]
+                if not existing_offers:
+                    # Create guaranteed offer with better terms from top club
+                    candidates = sorted(self.clubs, key=lambda c: c.reputation, reverse=True)[:5]
+                    club = random.choice(candidates)
+                    overall = client.current_overall_score or int(client.current_rating * 100)
+                    
+                    offer = {
+                        "club": club.name,
+                        "player": client,
+                        "player_name": client.name,
+                        "fee": 0,  # Free agent
+                        "wage": max(1500, int(overall * random.uniform(140, 220))),
+                        "contract_weeks": random.randint(52, 104),
+                        "expires_in_weeks": 2,  # Short deadline
+                        "status": "pending",
+                    }
+                    self.agent.pending_offers.append(offer)
+                    new_offers.append(offer)
+                    self.transfer_log.append({**offer, "status": "created_free_agent", "week": self.agent.week})
+                    print(f"\n📩 Oferta garantizada para agente libre {client.name}: {offer['club']} - ${offer['wage']:,}/sem")
+        
+        # Then: regular offers for other clients (only during transfer window)
+        if is_transfer_window:
+            for client in self.agent.clients:
+                # Skip if already has two active offers
+                existing = [o for o in self.agent.pending_offers if o.get("player") is client]
+                if len(existing) >= 2:
+                    continue
+
+                rating = client.current_overall_score or int(client.current_rating * 100)
+                if rating >= 80:
+                    prob = 0.65
+                elif rating >= 70:
+                    prob = 0.45
+                else:
+                    prob = 0.25
+
+                if random.random() > prob:
+                    continue
+
+                offer = self._create_transfer_offer(client)
+                if offer:
+                    self.agent.pending_offers.append(offer)
+                    new_offers.append(offer)
+                    self.transfer_log.append({**offer, "status": "created", "week": self.agent.week})
+
+        if new_offers:
+            print(f"\n📩 Nuevas ofertas de traspaso: {len(new_offers)} (ver abajo)")
+
+    def _handle_transfer_offers_prompt(self):
+        """Prompt the user to accept or reject pending offers."""
+        if not self.agent.pending_offers:
+            return
+
+        print("\nOFERTAS PENDIENTES PARA TUS CLIENTES:")
+        for idx, offer in enumerate(self.agent.pending_offers, 1):
+            player = offer["player"]
+            print(f"{idx}. {player.name} → {offer['club']} | Fee ${offer['fee']:,} | Wage ${offer['wage']:,}/sem | {offer['contract_weeks']} semanas | expira en {offer['expires_in_weeks']} sem")
+
+        for idx, offer in list(enumerate(list(self.agent.pending_offers), 1)):
+            player = offer["player"]
+            decision = input(f"Aceptar oferta #{idx} para {player.name}? (a)ccept / (r)eject / (s)kip: ").strip().lower()
+            if decision.startswith("a"):
+                self._accept_transfer_offer(offer)
+            elif decision.startswith("r"):
+                self.agent.pending_offers.remove(offer)
+                self.transfer_log.append({**offer, "status": "rejected", "week": self.agent.week})
+                print(f"✗ Rechazada oferta de {offer['club']} para {player.name}.")
+            else:
+                print(f"↷ Oferta para {player.name} se mantiene pendiente.")
+
+    def _accept_transfer_offer(self, offer: dict):
+        """Accept an offer and update agent finances and player contract."""
+        player = offer["player"]
+        player.sign_with_club(offer["club"], offer["wage"], offer["contract_weeks"])
+
+        # Agent commission: 5% of fee + 2 weeks of wage as bonus proxy
+        commission = int(offer["fee"] * 0.05 + offer["wage"] * 2 * 0.05)
+        self.agent.earn_commission(commission)
+
+        if offer in self.agent.pending_offers:
+            self.agent.pending_offers.remove(offer)
+
+        self.transfer_log.append({**offer, "status": "accepted", "week": self.agent.week, "commission": commission})
+        print(f"✓ {player.name} firmó con {offer['club']} por ${offer['wage']:,}/sem. Comisión: ${commission:,}")
+    
+    # ========== WEEKLY RANDOM SITUATIONS ==========
+    
+    def _generate_weekly_situation(self):
+        """Generate one random situation per week for a client."""
+        if not self.agent.clients or self.event_occurred_this_week:
+            return
+        
+        # Event catalog with weights
+        event_catalog = [
+            {"type": "needs_money", "weight": 10, "title": "💰 Necesita dinero"},
+            {"type": "demotivated", "weight": 12, "title": "😔 Desmotivado"},
+            {"type": "not_training", "weight": 8, "title": "🏃 No entrena"},
+            {"type": "press_rumor", "weight": 15, "title": "📰 Rumor de prensa"},
+            {"type": "coach_conflict", "weight": 10, "title": "⚔️ Conflicto con entrenador"},
+            {"type": "rival_agent", "weight": 8, "title": "🕴️ Tentación de otro agente"},
+            {"type": "family_issue", "weight": 7, "title": "👨‍👩‍👧 Problema familiar"},
+            {"type": "injury_scare", "weight": 10, "title": "🩹 Susto de lesión"},
+            {"type": "dressing_room_issue", "weight": 12, "title": "🚪 Problema de vestuario"},
+        ]
+        
+        # Pick random event by weight
+        total_weight = sum(e["weight"] for e in event_catalog)
+        rand = random.random() * total_weight
+        cumulative = 0
+        selected_event = event_catalog[0]
+        
+        for event in event_catalog:
+            cumulative += event["weight"]
+            if rand < cumulative:
+                selected_event = event
+                break
+        
+        # Pick random client
+        affected_client = random.choice(self.agent.clients)
+        
+        self.event_occurred_this_week = True
+        self._present_situation(affected_client, selected_event)
+    
+    def _present_situation(self, player: Player, event: dict):
+        """Present situation to user and handle their choice."""
+        print("\n" + "="*60)
+        print(f"🎲 SITUACIÓN SEMANAL: {event['title']}")
+        print("="*60)
+        print(f"Jugador: {player.name} ({player.position})")
+        print(f"Club: {player.club or 'Libre'}")
+        print(f"Morale: {player.morale} | Trust: {player.trust_in_agent}")
+        print()
+        
+        event_type = event["type"]
+        
+        if event_type == "needs_money":
+            print(f"{player.name} necesita un adelanto urgente de ${random.randint(2000, 8000):,}.")
+            print("\nOpciones:")
+            print("1. Darle adelanto personal (tu dinero)")
+            print("2. Negociar con el club un bonus")
+            print("3. Negarle el adelanto")
+            choice = input("\nElige (1-3): ").strip()
+            
+            if choice == "1":
+                cost = random.randint(2000, 8000)
+                if self.agent.spend_money(cost):
+                    player.trust_in_agent = "Good" if player.trust_in_agent == "Neutral" else "Excellent"
+                    print(f"✓ {player.name} está muy agradecido. Trust mejorado.")
+                    self._log_event(player, event_type, "gave_money", {"trust": "+"})
+                else:
+                    print("✗ No tienes suficiente dinero.")
+                    player.trust_in_agent = "Low" if player.trust_in_agent == "Neutral" else "Very Low"
+                    self._log_event(player, event_type, "failed_money", {"trust": "-"})
+            elif choice == "2":
+                if player.club:
+                    print(f"✓ Negociaste un bonus con {player.club}. {player.name} está satisfecho.")
+                    self._log_event(player, event_type, "negotiated_bonus", {"morale": "+"})
+                else:
+                    print(f"✗ {player.name} está libre, no hay club con quien negociar.")
+                    player.morale = "Unhappy"
+                    self._log_event(player, event_type, "no_club", {"morale": "-"})
+            else:
+                player.trust_in_agent = "Low"
+                player.morale = "Unhappy"
+                print(f"✗ {player.name} está decepcionado. Trust y morale reducidos.")
+                self._log_event(player, event_type, "denied", {"trust": "-", "morale": "-"})
+        
+        elif event_type == "demotivated":
+            print(f"{player.name} se siente desmotivado y sin objetivos claros.")
+            print("\nOpciones:")
+            print("1. Sesión motivacional intensa")
+            print("2. Darle tiempo libre")
+            print("3. Presionarlo para que entrene más")
+            choice = input("\nElige (1-3): ").strip()
+            
+            if choice == "1":
+                player.morale = "Happy"
+                player.trust_in_agent = "Good" if player.trust_in_agent != "Low" else "Neutral"
+                print(f"✓ {player.name} recuperó su motivación. Morale mejorado.")
+                self._log_event(player, event_type, "motivational_talk", {"morale": "+", "trust": "+"})
+            elif choice == "2":
+                player.morale = "Content"
+                print(f"↷ {player.name} tomó un descanso. Morale estable.")
+                self._log_event(player, event_type, "time_off", {"morale": "="})
+            else:
+                player.morale = "Unhappy"
+                player.trust_in_agent = "Low"
+                print(f"✗ {player.name} se siente presionado. Morale y trust reducidos.")
+                self._log_event(player, event_type, "pressured", {"morale": "-", "trust": "-"})
+        
+        elif event_type == "not_training":
+            print(f"{player.name} no está asistiendo a entrenamientos.")
+            print("\nOpciones:")
+            print("1. Hablar con él en privado")
+            print("2. Alertar al club/entrenador")
+            print("3. Darle ultimátum")
+            choice = input("\nElige (1-3): ").strip()
+            
+            if choice == "1":
+                player.trust_in_agent = "Good"
+                print(f"✓ {player.name} apreció tu apoyo. Volverá a entrenar.")
+                self._log_event(player, event_type, "private_talk", {"trust": "+"})
+            elif choice == "2":
+                if player.club:
+                    player.morale = "Content"
+                    print(f"↷ {player.club} está al tanto. {player.name} volverá.")
+                    self._log_event(player, event_type, "alerted_club", {"morale": "="})
+                else:
+                    print(f"✗ {player.name} está libre, no hay club.")
+                    self._log_event(player, event_type, "no_club", {})
+            else:
+                player.trust_in_agent = "Low"
+                player.morale = "Unhappy"
+                print(f"✗ {player.name} se molestó con el ultimátum.")
+                self._log_event(player, event_type, "ultimatum", {"trust": "-", "morale": "-"})
+        
+        elif event_type == "press_rumor":
+            rumor_positive = random.random() > 0.5
+            if rumor_positive:
+                print(f"📰 La prensa habla positivamente de {player.name}.")
+                player.morale = "Happy"
+                print(f"✓ Morale mejorado.")
+                self._log_event(player, event_type, "positive", {"morale": "+"})
+            else:
+                print(f"📰 La prensa publicó rumores negativos sobre {player.name}.")
+                print("\nOpciones:")
+                print("1. Emitir comunicado oficial")
+                print("2. Ignorar el rumor")
+                print("3. Confrontar al periodista")
+                choice = input("\nElige (1-3): ").strip()
+                
+                if choice == "1":
+                    player.morale = "Content"
+                    print(f"✓ El comunicado calmó la situación.")
+                    self._log_event(player, event_type, "statement", {"morale": "="})
+                elif choice == "2":
+                    player.morale = "Unhappy"
+                    print(f"↷ El rumor persiste. {player.name} está molesto.")
+                    self._log_event(player, event_type, "ignored", {"morale": "-"})
+                else:
+                    player.morale = "Content"
+                    player.trust_in_agent = "Good"
+                    print(f"✓ {player.name} apreció tu defensa agresiva.")
+                    self._log_event(player, event_type, "confronted", {"trust": "+"})
+        
+        elif event_type == "coach_conflict":
+            if not player.club:
+                print(f"✗ {player.name} está libre, no hay entrenador.")
+                self._log_event(player, event_type, "no_club", {})
+            else:
+                print(f"{player.name} tuvo un conflicto con el entrenador de {player.club}.")
+                print("\nOpciones:")
+                print("1. Mediar entre ambos")
+                print("2. Exigir disculpa del jugador")
+                print("3. Buscar transferencia inmediata")
+                choice = input("\nElige (1-3): ").strip()
+                
+                if choice == "1":
+                    player.morale = "Content"
+                    player.trust_in_agent = "Good"
+                    print(f"✓ Mediaste exitosamente. Relación restaurada.")
+                    self._log_event(player, event_type, "mediated", {"morale": "=", "trust": "+"})
+                elif choice == "2":
+                    player.trust_in_agent = "Low"
+                    print(f"↷ {player.name} se disculpó pero está resentido contigo.")
+                    self._log_event(player, event_type, "forced_apology", {"trust": "-"})
+                else:
+                    player.morale = "Unhappy"
+                    print(f"⚠️ {player.name} quiere irse. Deberás buscar ofertas.")
+                    self._log_event(player, event_type, "force_transfer", {"morale": "-"})
+        
+        elif event_type == "rival_agent":
+            print(f"🕴️ Otro agente está intentando seducir a {player.name}.")
+            print("\nOpciones:")
+            print("1. Renovar compromiso con beneficios")
+            print("2. Confiar en la lealtad del jugador")
+            print("3. Amenazar con acciones legales")
+            choice = input("\nElige (1-3): ").strip()
+            
+            if choice == "1":
+                cost = random.randint(1000, 3000)
+                if self.agent.spend_money(cost):
+                    player.trust_in_agent = "Excellent"
+                    print(f"✓ {player.name} rechazó al otro agente. Trust máximo. Costo: ${cost:,}")
+                    self._log_event(player, event_type, "renewed_commitment", {"trust": "++"})
+                else:
+                    print(f"✗ No tienes dinero para beneficios. {player.name} está dudando.")
+                    player.trust_in_agent = "Low"
+                    self._log_event(player, event_type, "no_money", {"trust": "-"})
+            elif choice == "2":
+                loyalty_check = random.random()
+                if loyalty_check > 0.3:
+                    player.trust_in_agent = "Good"
+                    print(f"✓ {player.name} se mantuvo leal.")
+                    self._log_event(player, event_type, "stayed_loyal", {"trust": "+"})
+                else:
+                    self.agent.remove_client(player)
+                    print(f"✗ {player.name} decidió cambiar de agente.")
+                    self._log_event(player, event_type, "lost_client", {"trust": "--"})
+            else:
+                player.trust_in_agent = "Very Low"
+                print(f"✗ {player.name} se sintió amenazado. Trust muy bajo.")
+                self._log_event(player, event_type, "threatened", {"trust": "--"})
+        
+        elif event_type == "family_issue":
+            print(f"{player.name} tiene un problema familiar grave.")
+            print("\nOpciones:")
+            print("1. Darle permiso y apoyo emocional")
+            print("2. Pedirle que se enfoque en el fútbol")
+            print("3. Ofrecer ayuda financiera")
+            choice = input("\nElige (1-3): ").strip()
+            
+            if choice == "1":
+                player.trust_in_agent = "Excellent"
+                player.morale = "Happy"
+                print(f"✓ {player.name} agradece tu comprensión. Trust y morale mejorados.")
+                self._log_event(player, event_type, "support", {"trust": "++", "morale": "+"})
+            elif choice == "2":
+                player.trust_in_agent = "Low"
+                player.morale = "Unhappy"
+                print(f"✗ {player.name} se sintió ignorado. Trust y morale reducidos.")
+                self._log_event(player, event_type, "ignored", {"trust": "-", "morale": "-"})
+            else:
+                cost = random.randint(3000, 7000)
+                if self.agent.spend_money(cost):
+                    player.trust_in_agent = "Excellent"
+                    print(f"✓ Tu ayuda de ${cost:,} fue invaluable. Trust máximo.")
+                    self._log_event(player, event_type, "financial_help", {"trust": "++"})
+                else:
+                    print(f"✗ No tienes dinero suficiente. {player.name} entenderá pero está decepcionado.")
+                    self._log_event(player, event_type, "no_money", {})
+        
+        elif event_type == "injury_scare":
+            print(f"{player.name} sufrió una molestia física que lo tiene preocupado.")
+            print("\nOpciones:")
+            print("1. Consultar médicos especializados (costo)")
+            print("2. Descanso preventivo")
+            print("3. Ignorar y continuar")
+            choice = input("\nElige (1-3): ").strip()
+            
+            if choice == "1":
+                cost = random.randint(1500, 3500)
+                if self.agent.spend_money(cost):
+                    player.morale = "Happy"
+                    player.trust_in_agent = "Good"
+                    print(f"✓ Consulta exitosa: ${cost:,}. {player.name} está tranquilo.")
+                    self._log_event(player, event_type, "specialist", {"morale": "+", "trust": "+"})
+                else:
+                    print(f"✗ No tienes dinero. {player.name} está nervioso.")
+                    player.morale = "Unhappy"
+                    self._log_event(player, event_type, "no_money", {"morale": "-"})
+            elif choice == "2":
+                player.morale = "Content"
+                print(f"↷ {player.name} descansará. Situación estable.")
+                self._log_event(player, event_type, "rest", {"morale": "="})
+            else:
+                injury_risk = random.random()
+                if injury_risk < 0.3:
+                    player.morale = "Unhappy"
+                    print(f"✗ La molestia empeoró. {player.name} podría lesionarse.")
+                    self._log_event(player, event_type, "worsened", {"morale": "-"})
+                else:
+                    print(f"✓ Afortunadamente, la molestia pasó.")
+                    self._log_event(player, event_type, "passed", {})
+        
+        elif event_type == "dressing_room_issue":
+            if not player.club:
+                print(f"✗ {player.name} está libre, no hay vestuario de equipo.")
+                self._log_event(player, event_type, "no_club", {})
+            else:
+                print(f"{player.name} tiene un conflicto con compañeros en el vestuario de {player.club}.")
+                print("\nOpciones:")
+                print("1. Organizar reunión de equipo")
+                print("2. Apoyar públicamente al jugador")
+                print("3. Pedirle que se disculpe con el equipo")
+                choice = input("\nElige (1-3): ").strip()
+                
+                if choice == "1":
+                    player.morale = "Content"
+                    player.trust_in_agent = "Good"
+                    print(f"✓ La reunión ayudó a resolver las tensiones. Vestuario más unido.")
+                    self._log_event(player, event_type, "team_meeting", {"morale": "=", "trust": "+"})
+                elif choice == "2":
+                    player.trust_in_agent = "Excellent"
+                    player.morale = "Happy"
+                    print(f"✓ {player.name} apreció tu apoyo incondicional, pero algunos compañeros están molestos.")
+                    self._log_event(player, event_type, "public_support", {"trust": "++", "morale": "+"})
+                else:
+                    player.morale = "Unhappy"
+                    player.trust_in_agent = "Low"
+                    print(f"✗ {player.name} se sintió traicionado. El vestuario mejoró pero perdiste su confianza.")
+                    self._log_event(player, event_type, "forced_apology", {"trust": "--", "morale": "-"})
+        
+        print("="*60)
+        input("\nPresiona Enter para continuar...")
+    
+    def _log_event(self, player: Player, event_type: str, resolution: str, effects: dict):
+        """Log event with player, type, resolution and effects."""
+        self.weekly_event_log.append({
+            "week": self.agent.week,
+            "player": player.name,
+            "event_type": event_type,
+            "resolution": resolution,
+            "effects": effects,
+        })
     
     def show_main_menu(self):
         """Display main menu and handle user choice"""
@@ -140,13 +616,14 @@ Trust your judgment and instinct!
         print("3. Read Scouting Reports (1 action)")
         print("4. Sign New Player (1 action)")
         print("5. Interact with Client (1 action)")
-        print("6. Contact Club Staff (1 action)")
-        print("7. View League Table")
-        print("8. International Playoff (1 action, requiere cliente en club internacional)")
-        print("9. Advance to Next Week")
-        print("10. Save & Quit")
+        print("6. Offer Player to Clubs (1 action)")
+        print("7. Contact Club Staff (1 action)")
+        print("8. View League Table")
+        print("9. International Playoff (1 action, requiere cliente en club internacional)")
+        print("10. Advance to Next Week")
+        print("11. Save & Quit")
         
-        choice = input("\nEnter choice (1-10): ").strip()
+        choice = input("\nEnter choice (1-11): ").strip()
         
         if choice == "1":
             self.view_agent_status()
@@ -159,14 +636,16 @@ Trust your judgment and instinct!
         elif choice == "5":
             self.interact_with_client()
         elif choice == "6":
-            self.contact_club_staff()
+            self.offer_player_to_clubs()
         elif choice == "7":
-            self.show_league_table()
+            self.contact_club_staff()
         elif choice == "8":
-            self.international_playoff()
+            self.show_league_table()
         elif choice == "9":
-            self.advance_week()
+            self.international_playoff()
         elif choice == "10":
+            self.advance_week()
+        elif choice == "11":
             self.quit_game()
         else:
             print("Invalid choice. Please try again.")
@@ -327,6 +806,129 @@ Trust your judgment and instinct!
         
         input("\nPress Enter to continue...")
     
+    def offer_player_to_clubs(self):
+        """Offer one of your clients to clubs proactively (improves relations but clubs decide)"""
+        if not self.agent.use_action():
+            print("\nNo actions remaining this week!")
+            input("Press Enter to continue...")
+            return
+        
+        if not self.agent.clients:
+            print("\nYou have no clients to offer!")
+            self.agent.actions_remaining += 1  # Refund
+            input("Press Enter to continue...")
+            return
+        
+        print("\n" + "="*60)
+        print("OFFER PLAYER TO CLUBS")
+        print("="*60)
+        print("\nSelect which client to offer:")
+        for i, client in enumerate(self.agent.clients, 1):
+            print(f"{i}. {client.name} ({client.position}) - Overall: {client.current_overall_score:.0f}")
+        
+        choice = input("\nEnter number to offer (or 0 to cancel): ").strip()
+        if not (choice.isdigit() and 0 < int(choice) <= len(self.agent.clients)):
+            self.agent.actions_remaining += 1  # Refund
+            input("Press Enter to continue...")
+            return
+        
+        player = self.agent.clients[int(choice) - 1]
+        print(f"\n📢 Offering {player.name} ({player.position}) to clubs...")
+        print("="*60)
+        
+        # Improve relationship with all clubs
+        for club in self.clubs:
+            current = self.agent.club_relationships.get(club.name, "Neutral")
+            if current == "Neutral":
+                self.agent.club_relationships[club.name] = "Positive"
+                print(f"✓ Relationship with {club.name} improved to Positive")
+            elif current == "Positive":
+                self.agent.club_relationships[club.name] = "Excellent"
+                print(f"✓ Relationship with {club.name} improved to Excellent")
+        
+        # Clubs evaluate and decide to offer or not
+        print("\n" + "-"*60)
+        print("CLUB EVALUATIONS:")
+        print("-"*60)
+        
+        player_overall = player.current_overall_score or int(player.current_rating * 100)
+        has_interest = False
+        
+        for club in self.clubs:
+            # Skip if player already there
+            if player.club == club.name:
+                continue
+            
+            # Evaluate if club is interested
+            decision = self._club_evaluate_offer(club, player, player_overall)
+            
+            if decision["interested"]:
+                has_interest = True
+                print(f"\n✓ {club.name} is interested in {player.name}!")
+                print(f"  → They will make an offer")
+                
+                # Create transfer offer from club
+                offer = {
+                    "club": club.name,
+                    "player": player,
+                    "player_name": player.name,
+                    "fee": 0 if not player.club else int(player.transfer_value or player_overall * 500),
+                    "wage": max(1200, int(player_overall * random.uniform(120, 200))),
+                    "contract_weeks": random.randint(52, 156),
+                    "expires_in_weeks": 2,
+                    "status": "pending",
+                }
+                self.agent.pending_offers.append(offer)
+                self.transfer_log.append({**offer, "status": "created_player_offer", "week": self.agent.week})
+            else:
+                print(f"\n✗ {club.name} declined: {decision['reason']}")
+        
+        if not has_interest:
+            print("\n" + "-"*60)
+            print("⚠️  No clubs showed interest in this player.")
+        
+        print("\n" + "="*60)
+        input("Press Enter to continue...")
+    
+    def _club_evaluate_offer(self, club, player, player_overall):
+        """Evaluate if a club is interested in offering for the player."""
+        reasons = []
+        
+        # Check 1: Overall rating too low
+        if player_overall < 50:
+            reasons.append("not good enough")
+        
+        # Check 2: Club has enough budget
+        budget = club.budget or 500000
+        avg_wage = player_overall * 150
+        if budget < avg_wage * 2:
+            reasons.append("insufficient budget")
+        
+        # Check 3: Position fit (club's formation needs)
+        position = player.position.lower()
+        # Basic check: club prefers certain positions
+        formation_positions = getattr(club, 'formation_positions', [])
+        if formation_positions and position not in formation_positions:
+            reasons.append(f"position mismatch ({position} not in formation)")
+        
+        # Check 4: Personality compatibility
+        player_personality = getattr(player, 'personality', 'Neutral')
+        if player_personality in ['Slack', 'Temperamental', 'Spineless', 'Mercenary']:
+            reasons.append(f"personality concerns ({player_personality})")
+        
+        # Decision: if 2+ reasons, reject
+        if len(reasons) >= 2:
+            return {
+                "interested": False,
+                "reason": " + ".join(reasons)
+            }
+        
+        # Otherwise interested
+        return {
+            "interested": True,
+            "reason": "suitable profile"
+        }
+
     def contact_club_staff(self):
         """Contact club directors or coaches"""
         if not self.agent.use_action():
@@ -642,8 +1244,14 @@ Trust your judgment and instinct!
         current_week_index = self.agent.week - 1
         self._simulate_week_fixtures(current_week_index)
         
+        # Simulate client participation in their club matches
+        self._simulate_client_match_participation(current_week_index)
+        
         # Process player growth and contract countdown
         self._process_weekly_player_growth(current_week_index)
+        
+        # Reset weekly event flag for next week
+        self.event_occurred_this_week = False
 
         self.agent.advance_week()
         print(f"\n{'='*60}")
@@ -667,6 +1275,112 @@ Trust your judgment and instinct!
         self.running = False
         sys.exit(0)
 
+    # ========== CLIENT MATCH PARTICIPATION ==========
+    
+    def _simulate_client_match_participation(self, week_index: int):
+        """Simulate agent clients playing in their club matches this week."""
+        if week_index < 0 or week_index >= len(self.schedule):
+            return
+        
+        phase = self.schedule[week_index].get('phase', '')
+        if not phase.startswith('Liga Nacional'):
+            return
+        
+        fixtures = self.schedule[week_index].get('fixtures', [])
+        
+        # Find which clients played this week
+        for client in self.agent.clients:
+            if not client.club or not client.signed:
+                continue
+            
+            # Check if client's club played this week
+            client_played = False
+            client_home = False
+            opponent_name = None
+            
+            for home_name, away_name in fixtures:
+                if client.club == home_name:
+                    client_played = True
+                    client_home = True
+                    opponent_name = away_name
+                    break
+                elif client.club == away_name:
+                    client_played = True
+                    client_home = False
+                    opponent_name = home_name
+                    break
+            
+            if not client_played:
+                continue
+            
+            # Simulate match performance
+            client.appearances += 1
+            
+            # Base performance based on position
+            position_goal_prob = {
+                'Forward': 0.35, 'Striker': 0.35, 'FW': 0.35, 'ST': 0.35,
+                'Winger': 0.25, 'Wing Forward': 0.25, 'WF': 0.25,
+                'Attacking Midfielder': 0.20, 'AM': 0.20,
+                'Midfielder': 0.10, 'Central Midfielder': 0.10, 'CM': 0.10,
+                'Defensive Midfielder': 0.05, 'DM': 0.05,
+            }
+            
+            goal_prob = position_goal_prob.get(client.position, 0.08)
+            assist_prob = goal_prob * 1.2  # Slightly higher chance of assist
+            
+            # Goals
+            if random.random() < goal_prob:
+                goals = 1
+                if random.random() < 0.15:  # 15% chance of brace
+                    goals = 2
+                client.goals += goals
+            else:
+                goals = 0
+            
+            # Assists
+            if random.random() < assist_prob:
+                assists = 1
+                if random.random() < 0.10:  # 10% chance of double assist
+                    assists = 2
+                client.assists += assists
+            else:
+                assists = 0
+            
+            # Cards (yellow/red)
+            yellow_card = random.random() < 0.12  # 12% chance
+            red_card = random.random() < 0.02 if not yellow_card else False  # 2% chance if no yellow
+            
+            # Match rating (1-10)
+            base_rating = 6.0
+            rating_bonus = goals * 1.5 + assists * 1.0
+            if yellow_card:
+                rating_bonus -= 0.3
+            if red_card:
+                rating_bonus -= 1.5
+            
+            match_rating = max(1.0, min(10.0, base_rating + rating_bonus + random.uniform(-0.5, 0.5)))
+            
+            # Show match performance if something noteworthy happened
+            if goals > 0 or assists > 0 or yellow_card or red_card:
+                print(f"\n⚽ ACTUACIÓN DE {client.name} vs {opponent_name}:")
+                if goals > 0:
+                    print(f"   🎯 Goles: {goals}")
+                if assists > 0:
+                    print(f"   🅰️ Asistencias: {assists}")
+                if yellow_card:
+                    print(f"   🟨 Tarjeta amarilla")
+                if red_card:
+                    print(f"   🟥 Tarjeta roja")
+                print(f"   ⭐ Rating: {match_rating:.1f}/10")
+                
+                # Morale effect
+                if goals >= 2 or (goals >= 1 and assists >= 1):
+                    client.morale = "Happy"
+                    print(f"   ✓ {client.name} está feliz con su actuación!")
+                elif red_card:
+                    client.morale = "Unhappy"
+                    print(f"   ✗ {client.name} está molesto por la expulsión.")
+    
     # ========== PLAYER ROSTER & GROWTH TRACKING ==========
 
     def _init_club_rosters(self):
