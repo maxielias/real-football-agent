@@ -285,6 +285,8 @@ Trust your judgment and instinct!
         
         # First: guarantee offers for free agents (no club) - ANY TIME
         for client in self.agent.clients:
+            if client.contract_accepted:  # Skip players who accepted a contract (they're no longer available)
+                continue
             if not client.club:  # Free agent (removed "and not client.signed" to allow any free agent)
                 # Free agents get offers even outside transfer window
                 existing_offers = [o for o in self.agent.pending_offers if o.get("player") is client]
@@ -325,6 +327,8 @@ Trust your judgment and instinct!
         # Then: regular offers for other clients (only during transfer window)
         if is_transfer_window:
             for client in self.agent.clients:
+                if client.contract_accepted:  # Skip players who accepted a contract
+                    continue
                 # Skip if already has two active offers
                 existing = [o for o in self.agent.pending_offers if o.get("player") is client]
                 if len(existing) >= 2:
@@ -1054,8 +1058,10 @@ Trust your judgment and instinct!
         print("11. Save & Quit")
         print("12. Plantar rumor en la prensa (1 acción)")
         print("13. Hacer promesa de campaña (1 acción)")
+        print("14. Rescindir contrato de cliente (1 acción)")
+        print("15. Ver reporte semanal de clientes")
         
-        choice = input("\nEnter choice (1-13): ").strip()
+        choice = input("\nEnter choice (1-15): ").strip()
         
         if choice == "1":
             self.view_agent_status()
@@ -1083,6 +1089,10 @@ Trust your judgment and instinct!
             self.plantar_rumor_prensa()
         elif choice == "13":
             self.hacer_promesa_campania()
+        elif choice == "14":
+            self.rescindir_contrato()
+        elif choice == "15":
+            self.ver_reporte_semanal()
         else:
             print("Invalid choice. Please try again.")
 
@@ -1561,6 +1571,155 @@ Trust your judgment and instinct!
             "reason": "suitable profile"
         }
 
+    def rescindir_contrato(self):
+        """Rescindir el contrato de un cliente con su club actual."""
+        if not self.agent.use_action():
+            print("\nNo te quedan acciones esta semana!")
+            input("Presiona Enter para continuar...")
+            return
+        
+        # Filter clients who have signed a contract with a club
+        signed_clients = [c for c in self.agent.clients if c.signed and c.club]
+        
+        if not signed_clients:
+            print("\nNo tienes clientes con contrato activo!")
+            self.agent.actions_remaining += 1
+            input("Presiona Enter para continuar...")
+            return
+        
+        print("\n" + "="*60)
+        print("RESCINDIR CONTRATO")
+        print("="*60)
+        print("\nSelecciona cliente a rescindir:")
+        for i, client in enumerate(signed_clients, 1):
+            fee = client.calculate_termination_fee()
+            print(f"{i}. {client.name} ({client.position}) - Club: {client.club}")
+            print(f"   Contrato: {client.contract_length} semanas | Fee rescisión: ${fee:,}")
+        
+        choice = input("\nNúmero de cliente (o 0 para cancelar): ").strip()
+        if not (choice.isdigit() and 0 < int(choice) <= len(signed_clients)):
+            self.agent.actions_remaining += 1
+            input("Presiona Enter para continuar...")
+            return
+        
+        client = signed_clients[int(choice) - 1]
+        fee = client.calculate_termination_fee()
+        
+        print(f"\n¿Rescindir contrato de {client.name}?")
+        print(f"Club: {client.club}")
+        print(f"Semanas restantes: {client.contract_length}")
+        print(f"Fee rescisión: ${fee:,}")
+        print(f"Fondos disponibles: ${self.agent.money:,}")
+        
+        if self.agent.money < fee:
+            print(f"\n✗ Fondos insuficientes! Necesitas ${fee - self.agent.money:,} más.")
+            self.agent.actions_remaining += 1
+            input("Presiona Enter para continuar...")
+            return
+        
+        confirm = input(f"\n¿Confirmar rescisión? (yes/no): ").strip().lower()
+        if confirm in ['yes', 'y']:
+            if self.agent.spend_money(fee):
+                client.terminate_contract()
+                print(f"\n✓ {client.name} ha rescindido su contrato con {client.club}")
+                print(f"Fee pagado: ${fee:,}")
+                print(f"Fondos restantes: ${self.agent.money:,}")
+                print(f"\n{client.name} está ahora disponible como agente libre.")
+                self._log_event(client, "rescision", "completada", {"club": client.club, "fee": fee})
+            else:
+                print("\n✗ No se pudo completar la rescisión.")
+                self.agent.actions_remaining += 1
+        else:
+            print("\nRescisión cancelada.")
+            self.agent.actions_remaining += 1
+        
+        input("\nPresiona Enter para continuar...")
+    
+    def ver_reporte_semanal(self):
+        """Ver reporte semanal detallado de desempeño de clientes."""
+        if not self.agent.clients:
+            print("\nNo tienes clientes para reportar!")
+            input("Presiona Enter para continuar...")
+            return
+        
+        print("\n" + "="*60)
+        print(f"REPORTE SEMANAL - SEMANA {self.agent.week}")
+        print("="*60)
+        
+        # Calcular estadísticas de clientes
+        stats = []
+        for client in self.agent.clients:
+            if client.weekly_stats and len(client.weekly_stats) > 0:
+                last_week = client.weekly_stats[-1]
+                if last_week["week"] == self.agent.week - 1:  # Participated this week
+                    stats.append({
+                        "client": client,
+                        "week_data": last_week,
+                        "season_goals": client.season_goals,
+                        "season_assists": client.season_assists,
+                        "season_apps": client.season_appearances,
+                    })
+        
+        if stats:
+            print("\n📊 ACTUACIONES ESTA SEMANA:")
+            print("-" * 60)
+            for s in stats:
+                client = s["client"]
+                week = s["week_data"]
+                print(f"\n{client.name} ({client.position})")
+                print(f"  Club: {client.club} | Rol: {self._get_player_role(int(client.current_overall_score or client.current_rating * 100), self.club_index[client.club].team_average if client.club in self.club_index else 70)}")
+                print(f"  vs {week['opponent']}: {week['goals']}G {week['assists']}A | Rating: {week['rating']}/10", end="")
+                if week['yellow_card']:
+                    print(" 🟨", end="")
+                if week['red_card']:
+                    print(" 🟥", end="")
+                print()
+                print(f"  Temporada: {s['season_goals']}G {s['season_assists']}A en {s['season_apps']} partidos | Prom: {s['season_goals']/max(1, s['season_apps']):.2f}G/partido")
+                pending_for_client = [o for o in self.agent.pending_offers if o.get("player") is client]
+                if len(pending_for_client) > 0:
+                    print(f"  Ofertas pendientes: {len(pending_for_client)}")
+        else:
+            print("\nNingún cliente jugó esta semana.")
+        
+        # Promesas pendientes
+        pending_promises = [p for p in self.active_promises if not p["cumplida"] and not p["fallida"]]
+        if pending_promises:
+            print("\n\n📝 PROMESAS ACTIVAS:")
+            print("-" * 60)
+            for p in pending_promises:
+                semanas_restantes = p["plazo"] - (self.agent.week - p["semana_hecha"])
+                promise_text = {
+                    "club_grande": "Club grande",
+                    "mejorar_salario": "Mejorar salario",
+                    "titularidad": "Titularidad",
+                    "seleccion_nacional": "Selección nacional"
+                }.get(p["tipo"], p["tipo"])
+                print(f"  {p['nombre']}: {promise_text} ({semanas_restantes} semanas restantes)")
+        
+        # Ofertas recibidas
+        offers_this_week = [o for o in self.transfer_log if o.get("week") == self.agent.week and o.get("status") in ["created", "created_free_agent"]]
+        if offers_this_week:
+            print("\n\n📩 OFERTAS RECIBIDAS ESTA SEMANA:")
+            print("-" * 60)
+            for offer in offers_this_week:
+                print(f"  {offer['player_name']} → {offer['club']}: ${offer['wage']:,}/sem | Contrato: {offer['contract_weeks']} semanas")
+        
+        # Mejores y peores performers
+        if stats:
+            print("\n\n🏆 MEJORES PERFORMERS:")
+            print("-" * 60)
+            by_rating = sorted(stats, key=lambda x: x["week_data"]["rating"], reverse=True)
+            for s in by_rating[:3]:
+                print(f"  {s['client'].name}: {s['week_data']['rating']}/10")
+            
+            print("\n📉 NECESITAN MEJORAR:")
+            print("-" * 60)
+            by_rating_asc = sorted(stats, key=lambda x: x["week_data"]["rating"])
+            for s in by_rating_asc[:3]:
+                print(f"  {s['client'].name}: {s['week_data']['rating']}/10")
+        
+        input("\nPresiona Enter para continuar...")
+
     def contact_club_staff(self):
         """Contact club directors or coaches"""
         if not self.agent.use_action():
@@ -2007,6 +2166,44 @@ Trust your judgment and instinct!
             client.season_goals += goals
             client.season_assists += assists
             
+            # Performance-based overall growth
+            # High performers grow faster
+            goals_per_match = client.season_goals / client.season_appearances if client.season_appearances > 0 else 0
+            if goals_per_match > 0.3:  # Excellent scorer
+                growth = random.uniform(0.4, 0.8)  # +0.4 to +0.8 overall
+            elif goals_per_match > 0.2:  # Good scorer
+                growth = random.uniform(0.2, 0.4)
+            elif goals_per_match > 0.1:  # Above average
+                growth = random.uniform(0.1, 0.3)
+            elif goals_per_match > 0.05:  # Average
+                growth = random.uniform(0.05, 0.15)
+            elif goals_per_match > 0:  # Below average
+                growth = random.uniform(-0.05, 0.05)
+            else:  # Struggling
+                growth = random.uniform(-0.15, -0.05)
+            
+            # Apply growth to all technical attributes (distributed)
+            if growth > 0:
+                client.defending += growth * 0.15
+                client.aerial += growth * 0.15
+                client.passing += growth * 0.20
+                client.technical += growth * 0.15
+                client.speed += growth * 0.10
+                client.physical += growth * 0.10
+                client.shooting += growth * 0.10
+                client.mental += growth * 0.05
+            elif growth < 0:
+                # Apply negative growth
+                client.defending += growth
+                client.aerial += growth
+                client.passing += growth * 1.5
+                client.technical += growth
+                client.speed += growth
+                client.physical += growth
+                client.shooting += growth
+            
+            client.calculate_ratings()  # Recalculate overall
+            
             # Show match performance if something noteworthy happened
             if goals > 0 or assists > 0 or yellow_card or red_card:
                 print(f"\n⚽ ACTUACIÓN DE {client.name} vs {opponent_name}:")
@@ -2019,6 +2216,10 @@ Trust your judgment and instinct!
                 if red_card:
                     print(f"   🟥 Tarjeta roja")
                 print(f"   ⭐ Rating: {match_rating:.1f}/10")
+                if growth > 0:
+                    print(f"   📈 Mejora: +{growth:.2f} puntos overall")
+                elif growth < 0:
+                    print(f"   📉 Baja: {growth:.2f} puntos overall")
                 
                 # Morale effect
                 if goals >= 2 or (goals >= 1 and assists >= 1):

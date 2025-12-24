@@ -70,6 +70,10 @@ class Player:
         self.season_assists = 0
         self.season_appearances = 0
         self.season_avg_rating = 0.0
+        
+        # Contract management
+        self.contract_accepted = False  # True after accepting an offer (blocks future offers)
+        self.weeks_in_contract = 0  # For contract termination calculation
 
         # History
         self.interaction_history = []
@@ -202,7 +206,27 @@ class Player:
         self.signed = True
         self.weekly_wage = wage
         self.contract_length = contract_weeks
+        self.contract_accepted = True  # Mark contract as accepted (blocks future offers)
+        self.weeks_in_contract = contract_weeks
         return f"{self.name} has signed with {club_name}!"
+    
+    def terminate_contract(self):
+        """Terminate contract with club (agent rescision)."""
+        self.signed = False
+        self.contract_accepted = False
+        self.club = None
+        self.contract_length = 0
+        self.weekly_wage = 0
+        return f"{self.name}'s contract has been terminated."
+    
+    def calculate_termination_fee(self):
+        """Calculate termination fee based on remaining contract weeks and overall."""
+        if not self.signed or self.contract_length == 0:
+            return 0
+        # Fee = 5% of overall wage per remaining year + 20% of player value
+        remaining_years = max(1, self.contract_length // 52)
+        termination_fee = int(self.weekly_wage * 52 * remaining_years * 0.05 + self.transfer_value * 0.20)
+        return termination_fee
 
     # ========== TECHNICAL ATTRIBUTES ==========
 
