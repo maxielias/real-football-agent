@@ -45,7 +45,10 @@ class FootballAgentGame:
         if not agent_name:
             agent_name = "Agent Smith"
         
-        self.agent = Agent(agent_name)
+        # Choose agent type/personality
+        agent_type = self._choose_agent_type()
+        
+        self.agent = Agent(agent_name, agent_type)
         self.all_players = create_initial_players()
         self.available_reports = create_player_reports()
         self.clubs = get_default_clubs()
@@ -56,12 +59,61 @@ class FootballAgentGame:
         self.club_index = {c.name: c for c in self.clubs}
         self._init_club_rosters()
         
-        print(f"\nWelcome, {agent_name}! Your journey as a football agent begins now.")
-        print("You have $50,000 to start your agency.")
-        print("Each week, you can perform 5 actions. Choose wisely!")
+        print(f"\nWelcome, {agent_name}! Your journey as a {agent_type} agent begins now.")
+        print(f"Starting money: ${self.agent.money:,}")
+        print(f"Actions per week: {self.agent.actions_per_week}")
+        print(f"Commission rate: {self.agent.commission_rate*100:.0f}%")
         input("\nPress Enter to begin...")
         
         self.game_loop()
+    
+    def _choose_agent_type(self):
+        """Let player choose their agent personality"""
+        print("\n" + "="*60)
+        print("CHOOSE YOUR AGENT TYPE")
+        print("="*60)
+        print("""
+1. THE FATHER (Mentor)
+   - Starting Money: $45,000
+   - Actions/Week: 6
+   - Commission: 3% (low)
+   - Bonuses: +15% client morale, +10% young player growth
+   - Philosophy: Long-term development, loyalty over money
+
+2. THE SHARK (Negotiator)
+   - Starting Money: $60,000
+   - Actions/Week: 4
+   - Commission: 8% (high)
+   - Bonuses: +20% transfer fees
+   - Penalty: -10% client morale (they feel used)
+   - Philosophy: Maximum profit, ruthless efficiency
+
+3. THE DIPLOMAT (Connector)
+   - Starting Money: $50,000
+   - Actions/Week: 5
+   - Commission: 5% (standard)
+   - Bonuses: 2x faster club relationships, access to top loans
+   - Philosophy: Build network, open doors
+
+4. BALANCED (All-rounder)
+   - Starting Money: $50,000
+   - Actions/Week: 5
+   - Commission: 5% (standard)
+   - Philosophy: No specialization, steady growth
+        """)
+        print("="*60)
+        
+        choice = input("\nChoose your type (1-4): ").strip()
+        type_map = {
+            "1": "Father",
+            "2": "Shark",
+            "3": "Diplomat",
+            "4": "Balanced"
+        }
+        
+        agent_type = type_map.get(choice, "Balanced")
+        print(f"\n✓ You chose: {agent_type}")
+        return agent_type
     
     def show_intro(self):
         """Display game introduction"""
@@ -305,6 +357,11 @@ Trust your judgment and instinct!
             {"type": "family_issue", "weight": 7, "title": "👨‍👩‍👧 Problema familiar"},
             {"type": "injury_scare", "weight": 10, "title": "🩹 Susto de lesión"},
             {"type": "dressing_room_issue", "weight": 12, "title": "🚪 Problema de vestuario"},
+            # CRISIS EVENTS (high impact)
+            {"type": "nightclub_scandal", "weight": 6, "title": "🍾 CRISIS: Escándalo nocturno"},
+            {"type": "doping_accusation", "weight": 4, "title": "💊 CRISIS: Acusación de doping"},
+            {"type": "social_media_disaster", "weight": 7, "title": "📱 CRISIS: Desastre en redes"},
+            {"type": "contract_rebellion", "weight": 5, "title": "📄 CRISIS: Rebelión contractual"},
         ]
         
         # Pick random event by weight
@@ -594,6 +651,138 @@ Trust your judgment and instinct!
                     player.trust_in_agent = "Low"
                     print(f"✗ {player.name} se sintió traicionado. El vestuario mejoró pero perdiste su confianza.")
                     self._log_event(player, event_type, "forced_apology", {"trust": "--", "morale": "-"})
+        
+        # ========== CRISIS EVENTS ==========
+        elif event_type == "nightclub_scandal":
+            print(f"🚨 CRISIS: {player.name} fue visto en un boliche a las 4 AM antes de un partido importante.")
+            print(f"La prensa ya tiene fotos. El club está furioso.")
+            print(f"\nTu energía: {self.agent.actions_remaining}/{self.agent.actions_per_week}")
+            print("\nOpciones:")
+            print("1. Encubrirlo ($8,000 + prensa baja, no sale en medios)")
+            print("2. Regañarlo públicamente (morale --, club +, prensa =)")
+            print("3. Decir al club que tú lo manejas (trust +, club -, prensa conoce)")
+            choice = input("\nElige (1-3): ").strip()
+            
+            if choice == "1":
+                cost = 8000
+                if self.agent.spend_money(cost):
+                    self.agent.change_press_reputation(-15)
+                    print(f"✓ Pagaste ${cost:,} para encubrir. No salió en medios.")
+                    print(f"⚠️  Prensa: {self.agent.press_reputation}/100 (perdiste reputación)")
+                    self._log_event(player, event_type, "cover_up", {"press": "-15"})
+                else:
+                    print(f"✗ No tienes dinero. El escándalo explotó en la prensa.")
+                    player.morale = "Unhappy"
+                    self.agent.change_press_reputation(-25)
+                    self._log_event(player, event_type, "failed_cover", {"morale": "-", "press": "-25"})
+            elif choice == "2":
+                player.morale = "Unhappy"
+                player.trust_in_agent = "Low"
+                print(f"✓ El club apreció tu postura firme. {player.name} está molesto contigo.")
+                self._log_event(player, event_type, "public_scolding", {"morale": "--", "trust": "-"})
+            else:
+                player.trust_in_agent = "Good"
+                self.agent.change_press_reputation(-10)
+                print(f"✓ {player.name} valoró tu apoyo. El club no quedó conforme.")
+                print(f"⚠️  Prensa: {self.agent.press_reputation}/100")
+                self._log_event(player, event_type, "agent_handling", {"trust": "+", "press": "-10"})
+        
+        elif event_type == "doping_accusation":
+            print(f"🚨 CRISIS: {player.name} fue acusado de doping por un medio amarillista.")
+            print(f"No hay pruebas, pero el rumor se expande rápido.")
+            print(f"\nTu energía: {self.agent.actions_remaining}/{self.agent.actions_per_week}")
+            print("\nOpciones:")
+            print("1. Contratar abogados ($12,000, prensa ++, trust ++)")
+            print("2. Emitir desmentida rápida (gratis, prensa +, efectividad limitada)")
+            print("3. No hacer nada (prensa --, trust -)")
+            choice = input("\nElige (1-3): ").strip()
+            
+            if choice == "1":
+                cost = 12000
+                if self.agent.spend_money(cost):
+                    self.agent.change_press_reputation(+20)
+                    player.trust_in_agent = "Excellent"
+                    print(f"✓ Demanda exitosa: ${cost:,}. Medio retractado. Reputación mejorada.")
+                    print(f"✓ Prensa: {self.agent.press_reputation}/100")
+                    self._log_event(player, event_type, "lawsuit", {"press": "+20", "trust": "++"})
+                else:
+                    print(f"✗ No tienes dinero. El rumor sigue vivo.")
+                    self.agent.change_press_reputation(-15)
+                    self._log_event(player, event_type, "no_money", {"press": "-15"})
+            elif choice == "2":
+                self.agent.change_press_reputation(+5)
+                player.trust_in_agent = "Good"
+                print(f"↷ Desmentida emitida. Daño parcialmente controlado.")
+                print(f"Prensa: {self.agent.press_reputation}/100")
+                self._log_event(player, event_type, "denial", {"press": "+5", "trust": "+"})
+            else:
+                self.agent.change_press_reputation(-20)
+                player.trust_in_agent = "Low"
+                player.morale = "Unhappy"
+                print(f"✗ No hiciste nada. {player.name} está furioso y la prensa te odia.")
+                print(f"⚠️  Prensa: {self.agent.press_reputation}/100")
+                self._log_event(player, event_type, "ignored", {"press": "-20", "trust": "-", "morale": "-"})
+        
+        elif event_type == "social_media_disaster":
+            print(f"🚨 CRISIS: {player.name} publicó un tweet polémico insultando al entrenador.")
+            print(f"Está viralizándose. El club exige acción inmediata.")
+            print(f"\nTu energía: {self.agent.actions_remaining}/{self.agent.actions_per_week}")
+            print("\nOpciones:")
+            print("1. Borrar tweet y disculpa pública (morale -, prensa +, club +)")
+            print("2. Defenderlo: 'Expresó su opinión' (trust ++, prensa -, club --)")
+            print("3. Fingir hackeo ($5,000, todo neutral)")
+            choice = input("\nElige (1-3): ").strip()
+            
+            if choice == "1":
+                player.morale = "Content"
+                self.agent.change_press_reputation(+10)
+                print(f"✓ Tweet borrado. Disculpa emitida. Crisis controlada.")
+                print(f"Prensa: {self.agent.press_reputation}/100")
+                self._log_event(player, event_type, "public_apology", {"morale": "-", "press": "+10"})
+            elif choice == "2":
+                player.trust_in_agent = "Excellent"
+                self.agent.change_press_reputation(-15)
+                print(f"✓ {player.name} agradece tu lealtad. Club y prensa no están contentos.")
+                print(f"⚠️  Prensa: {self.agent.press_reputation}/100")
+                self._log_event(player, event_type, "defended", {"trust": "++", "press": "-15"})
+            else:
+                cost = 5000
+                if self.agent.spend_money(cost):
+                    print(f"✓ Historia de hackeo creíble. Crisis neutralizada (${cost:,}).")
+                    self._log_event(player, event_type, "hack_excuse", {})
+                else:
+                    print(f"✗ No tienes dinero. Tweet sigue visible. Desastre total.")
+                    player.morale = "Unhappy"
+                    self.agent.change_press_reputation(-20)
+                    self._log_event(player, event_type, "failed_excuse", {"morale": "-", "press": "-20"})
+        
+        elif event_type == "contract_rebellion":
+            print(f"🚨 CRISIS: {player.name} está exigiendo renovación YA o amenaza con irse libre.")
+            print(f"Club: {player.club or 'Libre'}")
+            print(f"\nTu energía: {self.agent.actions_remaining}/{self.agent.actions_per_week}")
+            print("\nOpciones:")
+            print("1. Negociar mejora ahora (trust ++, club relación -)")
+            print("2. Calmarlo: 'Espera al final de temporada' (trust -, morale -)")
+            print("3. Filtrar a prensa que club no valora al jugador (prensa --, valor +20%)")
+            choice = input("\nElige (1-3): ").strip()
+            
+            if choice == "1":
+                player.trust_in_agent = "Excellent"
+                player.morale = "Happy"
+                print(f"✓ {player.name} está feliz. Presionarás al club esta semana.")
+                self._log_event(player, event_type, "negotiate_now", {"trust": "++", "morale": "+"})
+            elif choice == "2":
+                player.trust_in_agent = "Neutral"
+                player.morale = "Content"
+                print(f"↷ {player.name} aceptó esperar, pero no está contento.")
+                self._log_event(player, event_type, "delay", {"trust": "-", "morale": "-"})
+            else:
+                self.agent.change_press_reputation(-15)
+                player.transfer_value = int(player.transfer_value * 1.2) if player.transfer_value else 0
+                print(f"✓ Rumor plantado. Valor del jugador +20%. Prensa te tiene marcado.")
+                print(f"⚠️  Prensa: {self.agent.press_reputation}/100")
+                print(f"💰 Nuevo valor: ${player.transfer_value:,}")
+                self._log_event(player, event_type, "leak_to_press", {"press": "-15", "value": "+20%"})
         
         print("="*60)
         input("\nPresiona Enter para continuar...")
@@ -1421,6 +1610,9 @@ Trust your judgment and instinct!
         fixtures = self.schedule[week_index].get('fixtures', [])
         week_growth_count = 0
         
+        # Get client names for filtering output
+        client_names = {client.name for client in self.agent.clients}
+        
         print("\n" + "="*60)
         print(f"CRECIMIENTO SEMANAL - Semana {self.agent.week}")
         print("="*60)
@@ -1467,7 +1659,9 @@ Trust your judgment and instinct!
                             'growth_prob': growth_prob,
                         })
                         
-                        print(f"✓ {player['name']} ({player['personality']}): {old_rating} → {player['skill_rating']} (+{improvement}) [prob: {growth_prob:.3f}]")
+                        # Show only if it's an agent client
+                        if player['name'] in client_names:
+                            print(f"✓ {player['name']} ({player['personality']}): {old_rating} → {player['skill_rating']} (+{improvement}) [prob: {growth_prob:.3f}]")
                     
                     # Countdown contract
                     player['contract_weeks_remaining'] -= 1
@@ -1500,13 +1694,16 @@ Trust your judgment and instinct!
                             'growth_prob': growth_prob,
                         })
                         
-                        print(f"✓ {player['name']} ({player['personality']}): {old_rating} → {player['skill_rating']} (+{improvement}) [prob: {growth_prob:.3f}]")
+                        # Show only if it's an agent client
+                        if player['name'] in client_names:
+                            print(f"✓ {player['name']} ({player['personality']}): {old_rating} → {player['skill_rating']} (+{improvement}) [prob: {growth_prob:.3f}]")
                     
                     # Countdown contract
                     player['contract_weeks_remaining'] -= 1
         
-        if week_growth_count == 0:
-            print("No hubo mejoras esta semana.")
+        client_improvements = sum(1 for log in self.growth_log if log['week'] == self.agent.week and log['player'] in client_names)
+        if client_improvements == 0:
+            print("Ninguno de tus clientes mejoraron esta semana.")
         else:
             print(f"\nTotal de mejoras: {week_growth_count}")
         print("="*60)
