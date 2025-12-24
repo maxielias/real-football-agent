@@ -63,6 +63,13 @@ class Player:
         self.appearances = 0
         self.goals = 0
         self.assists = 0
+        
+        # Weekly statistics (season)
+        self.weekly_stats = []  # List of dicts: {week, goals, assists, rating, opponent, club}
+        self.season_goals = 0
+        self.season_assists = 0
+        self.season_appearances = 0
+        self.season_avg_rating = 0.0
 
         # History
         self.interaction_history = []

@@ -27,6 +27,9 @@ class Club:
         # Squad information
         self.players_count = random.randint(20, 25)  # Players in squad
         self.academy_rating = random.randint(1, 20)  # Youth development (1-20)
+        
+        # Team average rating (based on reputation)
+        self.team_average = self._calculate_team_average()
 
         # Financial
         self.budget = self._calculate_budget()
@@ -70,6 +73,22 @@ class Club:
         """Calculate training quality (1-20) based on tactic and reputation"""
         base_quality = (self.reputation / 100) * 20
         return max(1, min(20, int(base_quality + random.randint(-2, 2))))
+    
+    def _calculate_team_average(self):
+        """Calculate team average rating based on reputation (40-90 scale)"""
+        # Reputation maps to team average
+        # 30-50 reputation -> 50-60 average (teams fighting relegation)
+        # 50-70 reputation -> 60-70 average (mid-table)
+        # 70-85 reputation -> 70-80 average (top teams)
+        # 85-95 reputation -> 80-88 average (elite teams)
+        if self.reputation >= 85:
+            return random.randint(80, 88)
+        elif self.reputation >= 70:
+            return random.randint(70, 80)
+        elif self.reputation >= 50:
+            return random.randint(60, 70)
+        else:
+            return random.randint(50, 60)
 
     # Quick base probabilities for fast simulations (vs average opponent)
     def get_quick_profile(self):
