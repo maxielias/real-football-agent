@@ -37,6 +37,7 @@ class FootballAgentGame:
         self.weekly_event_log = []  # Track weekly random events
         self.event_occurred_this_week = False  # Only one event per week
         self.running = True
+        self.active_promises = []  # Lista de promesas activas
         
     def start_game(self):
         """Initialize and start the game"""
@@ -141,6 +142,7 @@ Trust your judgment and instinct!
     def game_loop(self):
         """Main game loop"""
         while self.running:
+            self._check_promises()
             self.show_week_summary()
             self.show_main_menu()
     
@@ -811,8 +813,10 @@ Trust your judgment and instinct!
         print("9. International Playoff (1 action, requiere cliente en club internacional)")
         print("10. Advance to Next Week")
         print("11. Save & Quit")
+        print("12. Plantar rumor en la prensa (1 acción)")
+        print("13. Hacer promesa de campaña (1 acción)")
         
-        choice = input("\nEnter choice (1-11): ").strip()
+        choice = input("\nEnter choice (1-13): ").strip()
         
         if choice == "1":
             self.view_agent_status()
@@ -836,8 +840,197 @@ Trust your judgment and instinct!
             self.advance_week()
         elif choice == "11":
             self.quit_game()
+        elif choice == "12":
+            self.plantar_rumor_prensa()
+        elif choice == "13":
+            self.hacer_promesa_campania()
+            def hacer_promesa_campania(self):
+                """Permite al agente hacer una promesa de campaña a un cliente."""
+                if not self.agent.use_action():
+                    print("\nNo te quedan acciones esta semana!")
+                    input("Presiona Enter para continuar...")
+                    return
+                if not self.agent.clients:
+                    print("\nNo tienes clientes para prometer!")
+                    self.agent.actions_remaining += 1  # Reembolsa acción
+                    input("Presiona Enter para continuar...")
+                    return
+                print("\n" + "="*60)
+                print("PROMESA DE CAMPAÑA")
+                print("="*60)
+                print("Selecciona el cliente objetivo:")
+                for i, client in enumerate(self.agent.clients, 1):
+                    print(f"{i}. {client.name} ({client.position}) - Valor: ${client.transfer_value:,}")
+                choice = input("\nNúmero de cliente (o 0 para cancelar): ").strip()
+                if not (choice.isdigit() and 0 < int(choice) <= len(self.agent.clients)):
+                    self.agent.actions_remaining += 1  # Reembolsa acción
+                    input("Presiona Enter para continuar...")
+                    return
+                player = self.agent.clients[int(choice) - 1]
+                print(f"\n¿Qué promesa quieres hacerle a {player.name}?")
+                print("1. Conseguirle un club grande esta temporada")
+                print("2. Mejorar su salario antes de 10 semanas")
+                print("3. Conseguirle titularidad en club actual")
+                print("4. Prometerle selección nacional")
+                promesa_tipo = input("Elige tipo (1-4): ").strip()
+                tipos = {
+                    "1": "club_grande",
+                    "2": "mejorar_salario",
+                    "3": "titularidad",
+                    "4": "seleccion_nacional"
+                }
+                if promesa_tipo not in tipos:
+                    print("\nOpción inválida. Acción reembolsada.")
+                    self.agent.actions_remaining += 1
+                    input("Presiona Enter para continuar...")
+                    return
+                # Registrar promesa
+                promesa = {
+                    "jugador": player,
+                    "nombre": player.name,
+                    "tipo": tipos[promesa_tipo],
+                    "semana_hecha": self.agent.week,
+                    "plazo": 10 if promesa_tipo in ["2"] else 20,  # 10 semanas para salario, 20 para otras
+                    "cumplida": False,
+                    "fallida": False
+                }
+                self.active_promises.append(promesa)
+                print(f"\nPromesa registrada: {tipos[promesa_tipo]} a {player.name}. Plazo: {promesa['plazo']} semanas.")
+                self._log_event(player, "promesa", "hecha", {"tipo": tipos[promesa_tipo], "plazo": promesa['plazo']})
+                input("Presiona Enter para continuar...")
+
+            def _check_promises(self):
+                """Chequea semanalmente el estado de las promesas y aplica consecuencias."""
+                for promesa in self.active_promises:
+                    if promesa["cumplida"] or promesa["fallida"]:
+                        continue
+                    semanas = self.agent.week - promesa["semana_hecha"]
+                    if semanas > promesa["plazo"]:
+                        # Promesa fallida
+                        promesa["fallida"] = True
+                        jugador = promesa["jugador"]
+                        jugador.trust_in_agent = "Low"
+                        jugador.morale = "Unhappy"
+                        self.agent.change_press_reputation(-10)
+                        print(f"\n✗ No cumpliste la promesa a {jugador.name} ({promesa['tipo']}). Confianza y moral reducidas. Prensa -10.")
+                        self._log_event(jugador, "promesa", "fallida", {"tipo": promesa["tipo"], "consecuencia": "confianza--, moral--, prensa-10"})
+                    else:
+                        # Chequeo de cumplimiento
+                        jugador = promesa["jugador"]
+                        if promesa["tipo"] == "club_grande":
+                            # Club grande: reputación club > 80
+                            if jugador.club:
+                                club = self.club_index.get(jugador.club)
+                                if club and getattr(club, "reputation", 0) >= 80:
+                                    promesa["cumplida"] = True
+                                    jugador.trust_in_agent = "Excellent"
+                                    jugador.morale = "Happy"
+                                    self.agent.change_press_reputation(+10)
+                                    print(f"\n✓ ¡Promesa cumplida! {jugador.name} firmó con club grande. Confianza y moral mejoradas. Prensa +10.")
+                                    self._log_event(jugador, "promesa", "cumplida", {"tipo": promesa["tipo"], "consecuencia": "confianza++, moral++, prensa+10"})
+                        elif promesa["tipo"] == "mejorar_salario":
+                            # Mejorar salario: salario actual > salario al prometer
+                            if hasattr(jugador, "weekly_wage") and jugador.weekly_wage > 0:
+                                if not promesa.get("salario_inicial"):
+                                    promesa["salario_inicial"] = jugador.weekly_wage
+                                elif jugador.weekly_wage > promesa["salario_inicial"]:
+                                    promesa["cumplida"] = True
+                                    jugador.trust_in_agent = "Excellent"
+                                    jugador.morale = "Happy"
+                                    self.agent.change_press_reputation(+10)
+                                    print(f"\n✓ ¡Promesa cumplida! {jugador.name} mejoró su salario. Confianza y moral mejoradas. Prensa +10.")
+                                    self._log_event(jugador, "promesa", "cumplida", {"tipo": promesa["tipo"], "consecuencia": "confianza++, moral++, prensa+10"})
+                        elif promesa["tipo"] == "titularidad":
+                            # Titularidad: status titular (requiere atributo en Player)
+                            if hasattr(jugador, "is_starter") and jugador.is_starter:
+                                promesa["cumplida"] = True
+                                jugador.trust_in_agent = "Excellent"
+                                jugador.morale = "Happy"
+                                self.agent.change_press_reputation(+10)
+                                print(f"\n✓ ¡Promesa cumplida! {jugador.name} es titular. Confianza y moral mejoradas. Prensa +10.")
+                                self._log_event(jugador, "promesa", "cumplida", {"tipo": promesa["tipo"], "consecuencia": "confianza++, moral++, prensa+10"})
+                        elif promesa["tipo"] == "seleccion_nacional":
+                            # Selección nacional: status seleccionado (requiere atributo en Player)
+                            if hasattr(jugador, "is_national_team") and jugador.is_national_team:
+                                promesa["cumplida"] = True
+                                jugador.trust_in_agent = "Excellent"
+                                jugador.morale = "Happy"
+                                self.agent.change_press_reputation(+10)
+                                print(f"\n✓ ¡Promesa cumplida! {jugador.name} fue convocado a selección. Confianza y moral mejoradas. Prensa +10.")
+                                self._log_event(jugador, "promesa", "cumplida", {"tipo": promesa["tipo"], "consecuencia": "confianza++, moral++, prensa+10"})
         else:
             print("Invalid choice. Please try again.")
+
+    def plantar_rumor_prensa(self):
+        """Permite al agente plantar un rumor en la prensa sobre un cliente."""
+        if not self.agent.use_action():
+            print("\nNo te quedan acciones esta semana!")
+            input("Presiona Enter para continuar...")
+            return
+        if not self.agent.clients:
+            print("\nNo tienes clientes para plantar rumores!")
+            self.agent.actions_remaining += 1  # Reembolsa acción
+            input("Presiona Enter para continuar...")
+            return
+        print("\n" + "="*60)
+        print("PLANTAR RUMOR EN LA PRENSA")
+        print("="*60)
+        print("Selecciona el cliente objetivo:")
+        for i, client in enumerate(self.agent.clients, 1):
+            print(f"{i}. {client.name} ({client.position}) - Valor: ${client.transfer_value:,}")
+        choice = input("\nNúmero de cliente (o 0 para cancelar): ").strip()
+        if not (choice.isdigit() and 0 < int(choice) <= len(self.agent.clients)):
+            self.agent.actions_remaining += 1  # Reembolsa acción
+            input("Presiona Enter para continuar...")
+            return
+        player = self.agent.clients[int(choice) - 1]
+        print(f"\n¿Tipo de rumor para {player.name}?")
+        print("1. Rumor positivo (mejora valor/moral)")
+        print("2. Rumor negativo (baja valor/moral de rival, riesgo alto)")
+        rumor_tipo = input("Elige tipo (1-2): ").strip()
+
+        import random
+        resultado = ""
+        efectos = {}
+        riesgo = random.random()
+        if rumor_tipo == "1":
+            # Rumor positivo: sube valor y moral, leve riesgo de ser descubierto (daño reputación prensa)
+            incremento = int(player.transfer_value * random.uniform(0.10, 0.20)) if player.transfer_value else 5000
+            player.transfer_value = (player.transfer_value or 0) + incremento
+            player.morale = "Happy"
+            self.agent.change_press_reputation(-5)  # Riesgo de que la prensa sospeche
+            resultado = f"📰 Rumor positivo plantado. Valor de {player.name} sube +${incremento:,}. Moral mejorada. (Riesgo bajo)"
+            efectos = {"valor": f"+${incremento:,}", "moral": "+", "prensa": "-5"}
+            # 10% de ser descubierto: reputación prensa -20
+            if riesgo < 0.10:
+                self.agent.change_press_reputation(-20)
+                resultado += "\n⚠️  ¡La prensa descubrió la maniobra! Reputación de prensa muy dañada (-20)."
+                efectos["prensa"] = "-25"
+        elif rumor_tipo == "2":
+            # Rumor negativo: baja valor y moral, alto riesgo de consecuencias
+            decremento = int(player.transfer_value * random.uniform(0.10, 0.25)) if player.transfer_value else 3000
+            player.transfer_value = max(0, (player.transfer_value or 0) - decremento)
+            player.morale = "Unhappy"
+            self.agent.change_press_reputation(-15)
+            resultado = f"📰 Rumor negativo plantado. Valor de {player.name} baja -${decremento:,}. Moral reducida. (Riesgo alto)"
+            efectos = {"valor": f"-${decremento:,}", "moral": "-", "prensa": "-15"}
+            # 40% de ser descubierto: reputación prensa -30, posible sanción (pérdida de dinero)
+            if riesgo < 0.40:
+                self.agent.change_press_reputation(-30)
+                sancion = random.randint(3000, 12000)
+                self.agent.spend_money(sancion)
+                resultado += f"\n⚠️  ¡La prensa descubrió el rumor falso! Reputación de prensa muy dañada (-30). Multa de ${sancion:,}."
+                efectos["prensa"] = "-45"
+                efectos["multa"] = f"-${sancion:,}"
+        else:
+            print("\nOpción inválida. Acción reembolsada.")
+            self.agent.actions_remaining += 1
+            input("Presiona Enter para continuar...")
+            return
+
+        print(f"\n{resultado}")
+        self._log_event(player, "plantar_rumor", "positivo" if rumor_tipo=="1" else "negativo", efectos)
+        input("Presiona Enter para continuar...")
     
     def view_agent_status(self):
         """Display detailed agent status"""
