@@ -63,6 +63,10 @@ if 'game_started' not in st.session_state:
     st.session_state.game_started = False
 if 'selected_page' not in st.session_state:
     st.session_state.selected_page = "🏠 Inicio"
+if 'pending_event' not in st.session_state:
+    st.session_state.pending_event = None
+if 'event_player' not in st.session_state:
+    st.session_state.event_player = None
 
 def init_game(agent_name, agent_type_display):
     """Initialize new game (headless, without input prompts)"""
@@ -127,6 +131,7 @@ def render_sidebar():
                 "📰 Ofertas",
                 "🔍 Buscar Jugadores",
                 "🤝 Interacciones",
+                "🎲 Situaciones",
                 "📈 Liga",
                 "⚙️ Acciones"
             ]
@@ -865,6 +870,757 @@ def render_actions():
                     time.sleep(1)
                     st.rerun()
 
+def render_situations():
+    """Render random situations/events page"""
+    st.title("🎲 Situación Semanal")
+    
+    game = st.session_state.game
+    
+    if not st.session_state.pending_event or not st.session_state.event_player:
+        st.info("No hay situaciones pendientes esta semana")
+        if st.button("🔙 Volver"):
+            st.session_state.selected_page = "🏠 Inicio"
+            st.rerun()
+        return
+    
+    event = st.session_state.pending_event
+    player = st.session_state.event_player
+    
+    # Display event header
+    st.markdown(f"""
+    <div class="player-card">
+        <h3>{event['title']}</h3>
+        <p><strong>Jugador:</strong> {player.name} ({player.position})</p>
+        <p><strong>Club:</strong> {player.club or 'Libre'}</p>
+        <p><strong>Morale:</strong> {player.morale} | <strong>Trust:</strong> {player.trust_in_agent}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    event_type = event["type"]
+    
+    # Handle each event type
+    if event_type == "needs_money":
+        amount = random.randint(2000, 8000)
+        st.markdown(f"💰 **{player.name} necesita un adelanto urgente de ${amount:,}.**")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("💵 Darle adelanto personal", use_container_width=True):
+                if game.agent.spend_money(amount):
+                    player.trust_in_agent = "Good" if player.trust_in_agent == "Neutral" else "Excellent"
+                    st.success(f"✓ {player.name} está muy agradecido. Trust mejorado.")
+                else:
+                    st.error("✗ No tienes suficiente dinero.")
+                    player.trust_in_agent = "Low"
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("🤝 Negociar con club", use_container_width=True):
+                if player.club:
+                    st.success(f"✓ Negociaste un bonus con {player.club}. {player.name} está satisfecho.")
+                else:
+                    st.warning(f"✗ {player.name} está libre, no hay club.")
+                    player.morale = "Unhappy"
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("❌ Negarle adelanto", use_container_width=True):
+                player.trust_in_agent = "Low"
+                player.morale = "Unhappy"
+                st.warning(f"✗ {player.name} está decepcionado.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "demotivated":
+        st.markdown(f"😔 **{player.name} se siente desmotivado y sin objetivos claros.**")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("💬 Sesión motivacional intensa", use_container_width=True):
+                player.morale = "Happy"
+                player.trust_in_agent = "Good" if player.trust_in_agent != "Low" else "Neutral"
+                st.success(f"✓ {player.name} recuperó su motivación.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("🏖️ Darle tiempo libre", use_container_width=True):
+                player.morale = "Content"
+                st.info(f"↷ {player.name} tomó un descanso.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("💪 Presionarlo a entrenar", use_container_width=True):
+                player.morale = "Unhappy"
+                player.trust_in_agent = "Low"
+                st.warning(f"✗ {player.name} se siente presionado.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "press_rumor":
+        rumor_positive = random.random() > 0.5
+        if rumor_positive:
+            st.markdown(f"📰 **La prensa habla positivamente de {player.name}.**")
+            player.morale = "Happy"
+            st.success("✓ Morale mejorado.")
+            if st.button("Continuar"):
+                st.session_state.pending_event = None
+                st.rerun()
+        else:
+            st.markdown(f"📰 **La prensa publicó rumores negativos sobre {player.name}.**")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("📄 Comunicado oficial", use_container_width=True):
+                    player.morale = "Content"
+                    st.success("✓ El comunicado calmó la situación.")
+                    st.session_state.pending_event = None
+                    time.sleep(2)
+                    st.rerun()
+            
+            with col2:
+                if st.button("🤐 Ignorar rumor", use_container_width=True):
+                    player.morale = "Unhappy"
+                    st.warning("↷ El rumor persiste.")
+                    st.session_state.pending_event = None
+                    time.sleep(2)
+                    st.rerun()
+            
+            with col3:
+                if st.button("⚔️ Confrontar periodista", use_container_width=True):
+                    player.morale = "Content"
+                    player.trust_in_agent = "Good"
+                    st.success(f"✓ {player.name} apreció tu defensa.")
+                    st.session_state.pending_event = None
+                    time.sleep(2)
+                    st.rerun()
+    
+    elif event_type == "nightclub_scandal":
+        st.markdown(f"""
+        🚨 **CRISIS: {player.name} fue visto en un boliche a las 4 AM antes de un partido importante.**
+        
+        La prensa ya tiene fotos. El club está furioso.
+        
+        💡 Tu energía: {game.agent.actions_remaining}/{game.agent.actions_per_week}
+        """)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("🤫 Encubrir ($8,000)", use_container_width=True):
+                cost = 8000
+                if game.agent.spend_money(cost):
+                    game.agent.change_press_reputation(-15)
+                    st.success(f"✓ Pagaste ${cost:,} para encubrir. No salió en medios.")
+                    st.warning(f"⚠️ Prensa: {game.agent.press_reputation}/100")
+                else:
+                    st.error("✗ No tienes dinero. Escándalo explotó.")
+                    player.morale = "Unhappy"
+                    game.agent.change_press_reputation(-25)
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("😠 Regañarlo públicamente", use_container_width=True):
+                player.morale = "Unhappy"
+                player.trust_in_agent = "Low"
+                st.success("✓ El club apreció tu postura firme.")
+                st.warning(f"✗ {player.name} está molesto contigo.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("🛡️ Decir que tú lo manejas", use_container_width=True):
+                player.trust_in_agent = "Good"
+                game.agent.change_press_reputation(-10)
+                st.success(f"✓ {player.name} valoró tu apoyo.")
+                st.warning(f"⚠️ Prensa: {game.agent.press_reputation}/100")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "social_media_disaster":
+        st.markdown(f"""
+        🚨 **CRISIS: {player.name} publicó un tweet polémico insultando al entrenador.**
+        
+        Está viralizándose. El club exige acción inmediata.
+        
+        💡 Tu energía: {game.agent.actions_remaining}/{game.agent.actions_per_week}
+        """)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("🗑️ Borrar y disculparse", use_container_width=True):
+                player.morale = "Content"
+                game.agent.change_press_reputation(+10)
+                st.success("✓ Tweet borrado. Crisis controlada.")
+                st.info(f"Prensa: {game.agent.press_reputation}/100")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("🛡️ Defenderlo", use_container_width=True):
+                player.trust_in_agent = "Excellent"
+                game.agent.change_press_reputation(-15)
+                st.success(f"✓ {player.name} agradece tu lealtad.")
+                st.warning(f"⚠️ Prensa: {game.agent.press_reputation}/100")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("🤖 Fingir hackeo ($5,000)", use_container_width=True):
+                cost = 5000
+                if game.agent.spend_money(cost):
+                    st.success(f"✓ Historia creíble. Crisis neutralizada (${cost:,}).")
+                else:
+                    st.error("✗ No tienes dinero. Desastre total.")
+                    player.morale = "Unhappy"
+                    game.agent.change_press_reputation(-20)
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "gambling_scandal":
+        st.markdown(f"""
+        🚨 **CRISIS: {player.name} fue fotografiado en un casino apostando grandes sumas.**
+        
+        El club está preocupado por adicción al juego. La prensa pide explicaciones.
+        
+        💡 Tu energía: {game.agent.actions_remaining}/{game.agent.actions_per_week}
+        """)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("🏥 Clínica ($15,000 + 2 acc)", use_container_width=True):
+                cost = 15000
+                if game.agent.spend_money(cost) and game.agent.actions_remaining >= 2:
+                    game.agent.actions_remaining -= 2
+                    player.trust_in_agent = "Excellent"
+                    game.agent.change_press_reputation(+15)
+                    st.success(f"✓ Tratamiento iniciado (${cost:,}, -2 acc). Prensa elogia.")
+                else:
+                    st.error("✗ Recursos insuficientes. Escándalo explota.")
+                    player.morale = "Unhappy"
+                    game.agent.change_press_reputation(-25)
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("⚖️ Negar ($8,000 + 1 acc)", use_container_width=True):
+                cost = 8000
+                if game.agent.spend_money(cost) and game.agent.actions_remaining >= 1:
+                    game.agent.actions_remaining -= 1
+                    game.agent.change_press_reputation(-20)
+                    st.warning(f"✓ Demandas presentadas (${cost:,}, -1 acc).")
+                else:
+                    st.error("✗ Recursos insuficientes.")
+                    game.agent.change_press_reputation(-30)
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("🤝 Admitir y supervisar", use_container_width=True):
+                player.trust_in_agent = "Good"
+                player.morale = "Content"
+                st.info("↷ Crisis parcialmente controlada.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "coach_conflict":
+        if not player.club:
+            st.warning(f"✗ {player.name} está libre, no hay entrenador.")
+            if st.button("Continuar"):
+                st.session_state.pending_event = None
+                st.rerun()
+        else:
+            st.markdown(f"⚔️ **{player.name} tuvo un conflicto con el entrenador de {player.club}.**")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("🤝 Mediar entre ambos", use_container_width=True):
+                    player.morale = "Content"
+                    player.trust_in_agent = "Good"
+                    st.success("✓ Mediaste exitosamente. Relación restaurada.")
+                    st.session_state.pending_event = None
+                    time.sleep(2)
+                    st.rerun()
+            
+            with col2:
+                if st.button("😔 Exigir disculpa", use_container_width=True):
+                    player.trust_in_agent = "Low"
+                    st.warning(f"↷ {player.name} se disculpó pero está resentido.")
+                    st.session_state.pending_event = None
+                    time.sleep(2)
+                    st.rerun()
+            
+            with col3:
+                if st.button("🚪 Buscar transferencia", use_container_width=True):
+                    player.morale = "Unhappy"
+                    st.warning(f"⚠️ {player.name} quiere irse. Busca ofertas.")
+                    st.session_state.pending_event = None
+                    time.sleep(2)
+                    st.rerun()
+    
+    elif event_type == "rival_agent":
+        st.markdown(f"🕴️ **Otro agente está intentando seducir a {player.name}.**")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            cost = random.randint(1000, 3000)
+            if st.button(f"💼 Renovar compromiso (${cost:,})", use_container_width=True):
+                if game.agent.spend_money(cost):
+                    player.trust_in_agent = "Excellent"
+                    st.success(f"✓ {player.name} rechazó al otro agente.")
+                else:
+                    st.error(f"✗ No tienes dinero. {player.name} está dudando.")
+                    player.trust_in_agent = "Low"
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("🤞 Confiar en lealtad", use_container_width=True):
+                if random.random() > 0.3:
+                    player.trust_in_agent = "Good"
+                    st.success(f"✓ {player.name} se mantuvo leal.")
+                else:
+                    game.agent.remove_client(player)
+                    st.error(f"✗ {player.name} cambió de agente.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("⚖️ Amenazar legalmente", use_container_width=True):
+                player.trust_in_agent = "Very Low"
+                st.error(f"✗ {player.name} se sintió amenazado.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "family_issue":
+        st.markdown(f"👨‍👩‍👧 **{player.name} tiene un problema familiar grave.**")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("❤️ Apoyo emocional", use_container_width=True):
+                player.trust_in_agent = "Excellent"
+                player.morale = "Happy"
+                st.success(f"✓ {player.name} agradece tu comprensión.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("⚽ Enfocarse en fútbol", use_container_width=True):
+                player.trust_in_agent = "Low"
+                player.morale = "Unhappy"
+                st.error(f"✗ {player.name} se sintió ignorado.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            cost = random.randint(3000, 7000)
+            if st.button(f"💰 Ayuda financiera (${cost:,})", use_container_width=True):
+                if game.agent.spend_money(cost):
+                    player.trust_in_agent = "Excellent"
+                    st.success(f"✓ Tu ayuda fue invaluable.")
+                else:
+                    st.warning("✗ No tienes dinero suficiente.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "injury_scare":
+        st.markdown(f"🩹 **{player.name} sufrió una molestia física que lo tiene preocupado.**")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            cost = random.randint(1500, 3500)
+            if st.button(f"🏥 Médicos (${cost:,})", use_container_width=True):
+                if game.agent.spend_money(cost):
+                    player.morale = "Happy"
+                    player.trust_in_agent = "Good"
+                    st.success(f"✓ Consulta exitosa (${cost:,}). {player.name} está tranquilo.")
+                else:
+                    st.error(f"✗ No tienes dinero. {player.name} está nervioso.")
+                    player.morale = "Unhappy"
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("😴 Descanso preventivo", use_container_width=True):
+                player.morale = "Content"
+                st.info("↷ Situación estable.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("💪 Ignorar y continuar", use_container_width=True):
+                if random.random() < 0.3:
+                    player.morale = "Unhappy"
+                    st.error("✗ La molestia empeoró.")
+                else:
+                    st.success("✓ La molestia pasó.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "dressing_room_issue":
+        if not player.club:
+            st.warning(f"✗ {player.name} está libre, no hay vestuario.")
+            if st.button("Continuar"):
+                st.session_state.pending_event = None
+                st.rerun()
+        else:
+            st.markdown(f"🚪 **{player.name} tiene un conflicto con compañeros en {player.club}.**")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("👥 Reunión de equipo", use_container_width=True):
+                    player.morale = "Content"
+                    player.trust_in_agent = "Good"
+                    st.success("✓ Reunión ayudó a resolver tensiones.")
+                    st.session_state.pending_event = None
+                    time.sleep(2)
+                    st.rerun()
+            
+            with col2:
+                if st.button("📢 Apoyar públicamente", use_container_width=True):
+                    player.trust_in_agent = "Excellent"
+                    player.morale = "Happy"
+                    st.success(f"✓ {player.name} apreció tu apoyo incondicional.")
+                    st.session_state.pending_event = None
+                    time.sleep(2)
+                    st.rerun()
+            
+            with col3:
+                if st.button("😔 Pedir disculpa al equipo", use_container_width=True):
+                    player.morale = "Unhappy"
+                    player.trust_in_agent = "Low"
+                    st.warning(f"✗ {player.name} se sintió traicionado.")
+                    st.session_state.pending_event = None
+                    time.sleep(2)
+                    st.rerun()
+    
+    elif event_type == "not_training":
+        st.markdown(f"🏃 **{player.name} no está asistiendo a entrenamientos.**")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("🤝 Hablar en privado", use_container_width=True):
+                player.trust_in_agent = "Good"
+                st.success(f"✓ {player.name} apreció tu apoyo. Volverá a entrenar.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("📞 Alertar al club", use_container_width=True):
+                if player.club:
+                    player.morale = "Content"
+                    st.info(f"↷ {player.club} está al tanto.")
+                else:
+                    st.warning(f"✗ {player.name} está libre, no hay club.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("⚠️ Darle ultimátum", use_container_width=True):
+                player.trust_in_agent = "Low"
+                player.morale = "Unhappy"
+                st.error(f"✗ {player.name} se molestó con el ultimátum.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "doping_accusation":
+        st.markdown(f"""
+        🚨 **CRISIS: {player.name} fue acusado de doping por un medio amarillista.**
+        
+        No hay pruebas, pero el rumor se expande rápido.
+        
+        💡 Tu energía: {game.agent.actions_remaining}/{game.agent.actions_per_week}
+        """)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("⚖️ Abogados ($12,000)", use_container_width=True):
+                cost = 12000
+                if game.agent.spend_money(cost):
+                    game.agent.change_press_reputation(+20)
+                    player.trust_in_agent = "Excellent"
+                    st.success(f"✓ Demanda exitosa. Medio retractado.")
+                    st.info(f"Prensa: {game.agent.press_reputation}/100")
+                else:
+                    st.error("✗ No tienes dinero. Rumor sigue vivo.")
+                    game.agent.change_press_reputation(-15)
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("📄 Desmentida rápida", use_container_width=True):
+                game.agent.change_press_reputation(+5)
+                player.trust_in_agent = "Good"
+                st.info("↷ Daño parcialmente controlado.")
+                st.info(f"Prensa: {game.agent.press_reputation}/100")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("🤐 No hacer nada", use_container_width=True):
+                game.agent.change_press_reputation(-20)
+                player.trust_in_agent = "Low"
+                player.morale = "Unhappy"
+                st.error(f"✗ {player.name} está furioso. La prensa te odia.")
+                st.info(f"⚠️ Prensa: {game.agent.press_reputation}/100")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "contract_rebellion":
+        st.markdown(f"""
+        🚨 **CRISIS: {player.name} está exigiendo renovación YA o amenaza con irse libre.**
+        
+        Club: {player.club or 'Libre'}
+        
+        💡 Tu energía: {game.agent.actions_remaining}/{game.agent.actions_per_week}
+        """)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("💼 Negociar mejora ahora", use_container_width=True):
+                player.trust_in_agent = "Excellent"
+                player.morale = "Happy"
+                st.success(f"✓ {player.name} está feliz. Presionarás al club.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("⏳ Esperar fin de temporada", use_container_width=True):
+                player.trust_in_agent = "Neutral"
+                player.morale = "Content"
+                st.warning(f"↷ {player.name} aceptó esperar, pero no está contento.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("📰 Filtrar a prensa", use_container_width=True):
+                game.agent.change_press_reputation(-15)
+                player.transfer_value = int(player.transfer_value * 1.2) if player.transfer_value else 0
+                st.success("✓ Rumor plantado. Valor +20%.")
+                st.warning(f"⚠️ Prensa: {game.agent.press_reputation}/100")
+                st.info(f"💰 Nuevo valor: ${player.transfer_value:,}")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "tax_evasion":
+        amount = random.randint(50000, 200000)
+        st.markdown(f"""
+        🚨 **CRISIS: Hacienda acusa a {player.name} de evadir impuestos por ${amount:,}.**
+        
+        Juicio inminente. El jugador te culpa por malos consejos fiscales.
+        
+        💡 Tu energía: {game.agent.actions_remaining}/{game.agent.actions_per_week}
+        """)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("⚖️ Élite legal ($25k + 2 acc)", use_container_width=True):
+                cost = 25000
+                if game.agent.spend_money(cost) and game.agent.actions_remaining >= 2:
+                    game.agent.actions_remaining -= 2
+                    if random.random() < 0.70:
+                        player.trust_in_agent = "Excellent"
+                        game.agent.change_press_reputation(+20)
+                        st.success(f"✓ ¡Absuelto! (${cost:,}, -2 acc)")
+                    else:
+                        player.trust_in_agent = "Neutral"
+                        game.agent.change_press_reputation(-10)
+                        st.error(f"✗ Condenado (${cost:,}, -2 acc)")
+                else:
+                    st.error("✗ Recursos insuficientes. Condenado.")
+                    player.trust_in_agent = "Low"
+                    game.agent.change_press_reputation(-30)
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("🤝 Acuerdo ($18k + 1 acc)", use_container_width=True):
+                cost = 18000
+                if game.agent.spend_money(cost) and game.agent.actions_remaining >= 1:
+                    game.agent.actions_remaining -= 1
+                    player.trust_in_agent = "Good"
+                    game.agent.change_press_reputation(-5)
+                    st.success(f"✓ Acuerdo firmado (${cost:,}, -1 acc)")
+                else:
+                    st.error("✗ Recursos insuficientes.")
+                    player.trust_in_agent = "Low"
+                    game.agent.change_press_reputation(-20)
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("🚫 Dejar solo", use_container_width=True):
+                player.trust_in_agent = "Very Low"
+                player.morale = "Unhappy"
+                game.agent.change_press_reputation(-35)
+                st.error(f"✗ {player.name} fue condenado. Te odia.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "assault_allegations":
+        st.markdown(f"""
+        🚨 **CRISIS: Una persona acusa a {player.name} de agresión en un bar.**
+        
+        Hay testigos, pero versiones contradictorias. Policía investiga.
+        
+        💡 Tu energía: {game.agent.actions_remaining}/{game.agent.actions_per_week}
+        """)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("🔍 Investigador ($20k + 2 acc)", use_container_width=True):
+                cost = 20000
+                if game.agent.spend_money(cost) and game.agent.actions_remaining >= 2:
+                    game.agent.actions_remaining -= 2
+                    if random.random() < 0.60:
+                        player.trust_in_agent = "Excellent"
+                        game.agent.change_press_reputation(+15)
+                        st.success(f"✓ Evidencia de inocencia (${cost:,}, -2 acc). Caso cerrado.")
+                    else:
+                        player.morale = "Unhappy"
+                        game.agent.change_press_reputation(-15)
+                        st.warning(f"✗ Sin evidencia concluyente (${cost:,}, -2 acc)")
+                else:
+                    st.error("✗ Recursos insuficientes.")
+                    player.morale = "Unhappy"
+                    game.agent.change_press_reputation(-20)
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("💰 Compensación ($30k + 1 acc)", use_container_width=True):
+                cost = 30000
+                if game.agent.spend_money(cost) and game.agent.actions_remaining >= 1:
+                    game.agent.actions_remaining -= 1
+                    player.trust_in_agent = "Good"
+                    game.agent.change_press_reputation(-10)
+                    st.success(f"✓ Cargos retirados (${cost:,}, -1 acc). Prensa sospecha.")
+                else:
+                    st.error("✗ Recursos insuficientes. Juicio se avecina.")
+                    player.morale = "Unhappy"
+                    game.agent.change_press_reputation(-25)
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("⏳ Esperar proceso legal", use_container_width=True):
+                if random.random() < 0.40:
+                    player.morale = "Content"
+                    st.success(f"✓ {player.name} fue absuelto. Suerte.")
+                else:
+                    player.trust_in_agent = "Very Low"
+                    player.morale = "Unhappy"
+                    game.agent.change_press_reputation(-40)
+                    st.error(f"✗ {player.name} fue condenado. Te culpa.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    elif event_type == "leaked_video":
+        st.markdown(f"""
+        🚨 **CRISIS: Un video íntimo de {player.name} fue filtrado en redes sociales.**
+        
+        Se viraliza rápidamente. El jugador está devastado emocionalmente.
+        
+        💡 Tu energía: {game.agent.actions_remaining}/{game.agent.actions_per_week}
+        """)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("💻 Ciberseguridad ($12k + 2 acc)", use_container_width=True):
+                cost = 12000
+                if game.agent.spend_money(cost) and game.agent.actions_remaining >= 2:
+                    game.agent.actions_remaining -= 2
+                    player.trust_in_agent = "Excellent"
+                    player.morale = "Content"
+                    game.agent.change_press_reputation(+10)
+                    st.success(f"✓ Video eliminado (${cost:,}, -2 acc). {player.name} agradecido.")
+                else:
+                    st.error("✗ Recursos insuficientes. Video persiste.")
+                    player.morale = "Unhappy"
+                    game.agent.change_press_reputation(-20)
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col2:
+            if st.button("📢 Víctima ($5k + 1 acc)", use_container_width=True):
+                cost = 5000
+                if game.agent.spend_money(cost) and game.agent.actions_remaining >= 1:
+                    game.agent.actions_remaining -= 1
+                    player.trust_in_agent = "Good"
+                    player.morale = "Happy"
+                    game.agent.change_press_reputation(+15)
+                    st.success(f"✓ Declaración emitida (${cost:,}, -1 acc). Prensa apoya.")
+                else:
+                    st.error("✗ Recursos insuficientes.")
+                    player.morale = "Unhappy"
+                    game.agent.change_press_reputation(-15)
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+        
+        with col3:
+            if st.button("🤐 Ignorar y esperar", use_container_width=True):
+                player.trust_in_agent = "Low"
+                player.morale = "Unhappy"
+                game.agent.change_press_reputation(-25)
+                st.error(f"✗ {player.name} está devastado. Te culpa por no ayudar.")
+                st.session_state.pending_event = None
+                time.sleep(2)
+                st.rerun()
+    
+    # Add skip button for testing
+    st.markdown("---")
+    if st.button("⏭️ Omitir Evento (Testing)", type="secondary"):
+        st.session_state.pending_event = None
+        st.session_state.event_player = None
+        st.session_state.selected_page = "🏠 Inicio"
+        st.rerun()
+
 def render_advance_week():
     """Render advance week page"""
     st.title("⏭️ Avanzar Semana")
@@ -888,10 +1644,53 @@ def render_advance_week():
             game._generate_transfer_offers_for_clients(current_week_index)
             game.event_occurred_this_week = False
             game.agent.advance_week()
+            
+            # Generate random weekly event
+            if game.agent.clients and not game.event_occurred_this_week:
+                event_catalog = [
+                    {"type": "needs_money", "weight": 10, "title": "💰 Necesita dinero"},
+                    {"type": "demotivated", "weight": 12, "title": "😔 Desmotivado"},
+                    {"type": "not_training", "weight": 8, "title": "🏃 No entrena"},
+                    {"type": "press_rumor", "weight": 15, "title": "📰 Rumor de prensa"},
+                    {"type": "coach_conflict", "weight": 10, "title": "⚔️ Conflicto con entrenador"},
+                    {"type": "rival_agent", "weight": 8, "title": "🕴️ Tentación de otro agente"},
+                    {"type": "family_issue", "weight": 7, "title": "👨‍👩‍👧 Problema familiar"},
+                    {"type": "injury_scare", "weight": 10, "title": "🩹 Susto de lesión"},
+                    {"type": "dressing_room_issue", "weight": 12, "title": "🚪 Problema de vestuario"},
+                    {"type": "nightclub_scandal", "weight": 6, "title": "🍾 CRISIS: Escándalo nocturno"},
+                    {"type": "doping_accusation", "weight": 4, "title": "💊 CRISIS: Acusación de doping"},
+                    {"type": "social_media_disaster", "weight": 7, "title": "📱 CRISIS: Desastre en redes"},
+                    {"type": "contract_rebellion", "weight": 5, "title": "📄 CRISIS: Rebelión contractual"},
+                    {"type": "gambling_scandal", "weight": 5, "title": "🎰 CRISIS: Escándalo de apuestas"},
+                    {"type": "tax_evasion", "weight": 4, "title": "💸 CRISIS: Evasión fiscal"},
+                    {"type": "assault_allegations", "weight": 3, "title": "⚖️ CRISIS: Denuncia por agresión"},
+                    {"type": "leaked_video", "weight": 6, "title": "📹 CRISIS: Video comprometedor filtrado"},
+                ]
+                
+                total_weight = sum(e["weight"] for e in event_catalog)
+                rand = random.random() * total_weight
+                cumulative = 0
+                selected_event = event_catalog[0]
+                
+                for event in event_catalog:
+                    cumulative += event["weight"]
+                    if rand < cumulative:
+                        selected_event = event
+                        break
+                
+                affected_client = random.choice(game.agent.clients)
+                st.session_state.pending_event = selected_event
+                st.session_state.event_player = affected_client
+                game.event_occurred_this_week = True
 
         st.success("¡Semana avanzada!")
         time.sleep(1)
-        st.session_state.selected_page = "📝 Reportes"
+        
+        # If event was generated, go to situations page
+        if st.session_state.pending_event:
+            st.session_state.selected_page = "🎲 Situaciones"
+        else:
+            st.session_state.selected_page = "📝 Reportes"
         st.rerun()
 
 # Main app
@@ -921,6 +1720,8 @@ def main():
         render_league()
     elif page == "⚙️ Acciones":
         render_actions()
+    elif page == "🎲 Situaciones":
+        render_situations()
     elif page == "⏭️ Avanzar":
         render_advance_week()
 
