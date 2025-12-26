@@ -13,6 +13,7 @@ from game_data import (
     get_international_clubs,
 )
 import time
+import random
 
 # Page config
 st.set_page_config(
@@ -458,7 +459,7 @@ def render_contracts():
                     - 💵 Salario: ${offer['wage']:,}/sem
                     - 📅 Contrato: {offer['contract_weeks']} semanas
                     - 💰 Fee transfer: ${offer['fee']:,}
-                    - ⏰ Expira: Semana {offer['deadline']}
+                    - ⏰ Expira en: {offer.get('expires_in_weeks', 2)} semanas
                     """)
                 
                 with col2:
@@ -483,6 +484,59 @@ def render_contracts():
                         st.rerun()
     else:
         st.info("No hay ofertas pendientes")
+    
+    # Generate offers manually
+    if st.button("📩 Generar Ofertas de la Semana"):
+        game._generate_transfer_offers_for_clients(game.agent.week - 1)
+        st.success("Ofertas generadas")
+        time.sleep(1)
+        st.rerun()
+    
+    st.markdown("---")
+    
+    # Proactively offer player to clubs
+    st.subheader("📣 Ofrecer Jugador a Clubes")
+    if game.agent.clients:
+        player_choice = st.selectbox("Seleccionar cliente:", [""] + [c.name for c in game.agent.clients], key="offer_client")
+        if player_choice:
+            player = next(c for c in game.agent.clients if c.name == player_choice)
+            if st.button("📣 Ofrecer a Clubes", type="primary"):
+                # Improve relationships with all clubs (as in CLI)
+                for club in game.clubs:
+                    current = game.agent.club_relationships.get(club.name, "Neutral")
+                    if current == "Neutral":
+                        game.agent.club_relationships[club.name] = "Positive"
+                    elif current == "Positive":
+                        game.agent.club_relationships[club.name] = "Excellent"
+                
+                player_overall = player.current_overall_score or int(player.current_rating * 100)
+                created = 0
+                for club in game.clubs:
+                    if player.club == club.name:
+                        continue
+                    decision = game._club_evaluate_offer(club, player, player_overall)
+                    if decision["interested"]:
+                        role = game._get_player_role(player_overall, club.team_average)
+                        offer = {
+                            "club": club.name,
+                            "player": player,
+                            "player_name": player.name,
+                            "fee": 0 if not player.club else int(player.transfer_value or player_overall * 500),
+                            "wage": max(1200, int(player_overall * 150)),
+                            "contract_weeks": random.randint(52, 156),
+                            "expires_in_weeks": 2,
+                            "status": "pending",
+                            "role": role,
+                        }
+                        game.agent.pending_offers.append(offer)
+                        game.transfer_log.append({**offer, "status": "created_player_offer", "week": game.agent.week})
+                        created += 1
+                if created:
+                    st.success(f"Se crearon {created} ofertas para {player.name}")
+                else:
+                    st.warning("Ningún club mostró interés")
+                time.sleep(1)
+                st.rerun()
     
     st.markdown("---")
     
@@ -830,6 +884,8 @@ def render_advance_week():
             game._simulate_week_fixtures(current_week_index)
             game._simulate_client_match_participation(current_week_index)
             game._process_weekly_player_growth(current_week_index)
+            # Generar ofertas de la semana (ventana de traspasos y agentes libres)
+            game._generate_transfer_offers_for_clients(current_week_index)
             game.event_occurred_this_week = False
             game.agent.advance_week()
 
