@@ -130,10 +130,14 @@ def render_sidebar():
                 "💼 Contratos",
                 "📰 Ofertas",
                 "🔍 Buscar Jugadores",
+                "📚 Scout",
                 "🤝 Interacciones",
                 "🎲 Situaciones",
+                "🏢 Contactar Clubes",
+                "⚽ Playoff Internacional",
                 "📈 Liga",
-                "⚙️ Acciones"
+                "⚙️ Acciones",
+                "🎖️ Estado del Agente"
             ]
             
             for page in pages:
@@ -1621,6 +1625,262 @@ def render_situations():
         st.session_state.selected_page = "🏠 Inicio"
         st.rerun()
 
+def render_agent_status():
+    """Render agent status page with confidence bars"""
+    st.title("🎖️ Estado del Agente")
+    
+    game = st.session_state.game
+    agent = game.agent
+    
+    # Header
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("💰 Dinero", f"${agent.money:,}")
+    with col2:
+        st.metric("📅 Semana", agent.week)
+    with col3:
+        st.metric("👥 Clientes", len(agent.clients))
+    with col4:
+        st.metric("⚡ Acciones", f"{agent.actions_remaining}/{agent.actions_per_week}")
+    
+    st.markdown("---")
+    
+    # Confidence bars
+    st.subheader("📊 Barras de Confianza")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**👥 Confianza de Jugadores**")
+        if agent.clients:
+            trust_map = {"Low": 25, "Neutral": 50, "Good": 75, "Excellent": 100, "Very Low": 10}
+            avg_trust = sum(trust_map.get(c.trust_in_agent, 50) for c in agent.clients) / len(agent.clients)
+            st.progress(avg_trust / 100, text=f"{avg_trust:.0f}/100")
+        else:
+            st.progress(0.5, text="Sin clientes")
+    
+    with col2:
+        st.markdown("**🏢 Relaciones con Clubes**")
+        if agent.club_relationships:
+            rel_map = {"Hostile": 0, "Neutral": 50, "Positive": 75, "Excellent": 100}
+            avg_club = sum(rel_map.get(rel, 50) for rel in agent.club_relationships.values()) / len(agent.club_relationships)
+            st.progress(avg_club / 100, text=f"{avg_club:.0f}/100")
+        else:
+            st.progress(0.5, text="Sin relaciones")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**📰 Reputación en Prensa**")
+        st.progress(agent.press_reputation / 100, text=f"{agent.press_reputation}/100")
+    
+    with col2:
+        st.markdown("**🎯 Tipo de Agente**")
+        st.info(f"{agent.agent_type} - Comisión: {agent.commission_rate*100:.0f}%")
+    
+    st.markdown("---")
+    
+    # Clients list
+    st.subheader("📋 Tus Clientes")
+    if agent.clients:
+        for client in agent.clients:
+            overall = int(client.current_overall_score or client.current_rating * 100)
+            with st.expander(f"⚽ {client.name} ({client.position}) - Overall {overall}"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"""
+                    **Información:**
+                    - 🎂 Edad: {client.age}
+                    - 💎 Overall: {overall}
+                    - 💰 Valor: ${client.transfer_value:,}
+                    - 🏆 Club: {client.club or 'Agente libre'}
+                    - 💵 Salario: ${client.weekly_wage:,}/sem
+                    """)
+                with col2:
+                    st.markdown(f"""
+                    **Estado:**
+                    - 😊 Morale: {client.morale}
+                    - 🤝 Trust: {client.trust_in_agent}
+                    - ⚽ Goles: {client.season_goals}
+                    - 🅰️ Asistencias: {client.season_assists}
+                    - 📊 Partidos: {client.season_appearances}
+                    """)
+    else:
+        st.info("No tienes clientes todavía")
+
+def render_scout_reports():
+    """Render scout reports page"""
+    st.title("📚 Leer Reportes de Scout")
+    
+    game = st.session_state.game
+    
+    if game.agent.actions_remaining <= 0:
+        st.error("❌ No te quedan acciones esta semana!")
+        return
+    
+    if not game.available_reports:
+        st.info("No hay nuevos reportes disponibles esta semana")
+        return
+    
+    st.markdown(f"**Reportes disponibles:** {len(game.available_reports)}")
+    st.markdown("---")
+    
+    for i, report in enumerate(game.available_reports):
+        with st.expander(f"📄 {report['preview']}", expanded=(i == 0)):
+            st.markdown(report['full_report'])
+            
+            if st.button(f"📌 Marcar como leído", key=f"report_{i}"):
+                game.available_reports.pop(i)
+                game.agent.use_action()
+                st.success("✓ Reporte leído. -1 acción")
+                time.sleep(1)
+                st.rerun()
+
+def render_contact_clubs():
+    """Render contact clubs page"""
+    st.title("🏢 Contactar Personal de Club")
+    
+    game = st.session_state.game
+    
+    if game.agent.actions_remaining <= 0:
+        st.error("❌ No te quedan acciones esta semana!")
+        return
+    
+    st.markdown("**Selecciona un club para contactar:**")
+    
+    club_options = [f"{club.name} (🏅 {club.reputation})" for club in game.clubs]
+    selected = st.selectbox("Club:", club_options)
+    
+    if selected:
+        club = next(c for c in game.clubs if c.name == selected.split(" (")[0])
+        
+        with st.expander("📋 Información del Club"):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"""
+                **Club:** {club.name}
+                **Reputación:** {club.reputation}
+                **Objetivo:** {club.objective}
+                **Presupuesto:** ${club.budget:,}
+                """)
+            with col2:
+                st.markdown(f"""
+                **Manager:** {club.manager}
+                **Formación:** {club.formation}
+                **Táctica:** {club.tactic}
+                **Plantilla:** {club.players_count} jugadores
+                """)
+        
+        st.markdown("---")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button(f"💬 Hablar con {club.manager}", type="primary", use_container_width=True):
+                if game.agent.use_action():
+                    current = game.agent.club_relationships.get(club.name, "Neutral")
+                    if current == "Neutral":
+                        game.agent.club_relationships[club.name] = "Positive"
+                        st.success(f"✓ {club.manager}: 'Siempre es bueno escuchar de los agentes.'")
+                        st.info("Relación mejorada a Positiva")
+                    elif current == "Positive":
+                        game.agent.club_relationships[club.name] = "Excellent"
+                        st.success(f"✓ {club.manager}: 'Me alegra trabajar contigo.'")
+                        st.info("Relación mejorada a Excelente")
+                    else:
+                        st.success(f"✓ {club.manager}: 'Nos mantenemos en contacto.'")
+                    
+                    time.sleep(2)
+                    st.rerun()
+        
+        with col2:
+            if st.button("ℹ️ Ver Plantilla", use_container_width=True):
+                st.info("Jugadores del club:")
+                for player in club.players[:10]:
+                    st.caption(f"⚽ {player.name} ({player.position}) - Overall {int(player.current_overall_score or player.current_rating*100)}")
+                if len(club.players) > 10:
+                    st.caption(f"... y {len(club.players)-10} más")
+        with col2:
+            if st.button("ℹ️ Ver Información", use_container_width=True):
+                st.info(f"**Plantilla:** {club.players_count} jugadores")
+                st.caption(f"⚽ **Formación:** {club.formation}")
+                st.caption(f"📋 **Táctica:** {club.tactic}")
+                st.caption(f"🎯 **Estilo:** {club.style if hasattr(club, 'style') else 'Ofensivo'}")
+
+def render_international_playoff():
+    """Render international playoff page"""
+    st.title("⚽ Playoff Internacional")
+    
+    game = st.session_state.game
+    
+    # Check if player has clients in international clubs
+    client_club_names = {client.club for client in game.agent.clients if client.club}
+    participating = [c for c in game.international_clubs if c.name in client_club_names]
+    
+    if not participating:
+        st.warning("❌ No tienes clientes en clubes internacionales")
+        st.info("El playoff se activa solo si al menos uno de tus representados juega en un club internacional.")
+        return
+    
+    if game.agent.actions_remaining <= 0:
+        st.error("❌ No te quedan acciones esta semana!")
+        return
+    
+    st.success(f"✅ Clientes en clubes internacionales:")
+    for client in game.agent.clients:
+        if client.club in client_club_names:
+            st.markdown(f"- ⚽ **{client.name}** ({client.club})")
+    
+    st.markdown("---")
+    
+    if st.button("🎯 Ejecutar Playoff Internacional", type="primary", use_container_width=True):
+        if game.agent.use_action():
+            with st.spinner("Simulando playoff..."):
+                # Select 8 clubs for bracket
+                pool_sorted = sorted(game.international_clubs, key=lambda c: c.reputation, reverse=True)
+                participants = pool_sorted[:8]
+                random.shuffle(participants)
+                
+                round_names = ["Cuartos de Final", "Semifinal", "Final"]
+                current_round = participants
+                
+                results = []
+                
+                for round_name in round_names:
+                    results.append(f"\n### {round_name}")
+                    winners = []
+                    
+                    for i in range(0, len(current_round), 2):
+                        home = current_round[i]
+                        away = current_round[i+1]
+                        home_prob = home.get_win_probability(away)
+                        away_prob = away.get_win_probability(home)
+                        total_prob = home_prob + away_prob
+                        outcome = random.random() * total_prob
+                        winner = home if outcome <= home_prob else away
+                        
+                        results.append(f"- {home.name} ({home_prob:.0%}) vs {away.name} ({away_prob:.0%}) → **{winner.name}**")
+                        winners.append(winner)
+                    
+                    current_round = winners
+                
+                champion = current_round[0]
+                
+                # Display results
+                st.markdown("\n".join(results))
+                
+                st.markdown("---")
+                st.success(f"### 🏆 CAMPEÓN INTERNACIONAL: {champion.name}")
+                
+                # Bonus for clients in champion club
+                for client in game.agent.clients:
+                    if client.club == champion.name:
+                        bonus = int(client.weekly_wage * 4)
+                        game.agent.earn_commission(bonus)
+                        st.info(f"✨ ¡{client.name} gana con {champion.name}! Bonificación: ${bonus:,}")
+            
+            time.sleep(2)
+            st.rerun()
 def render_advance_week():
     """Render advance week page"""
     st.title("⏭️ Avanzar Semana")
@@ -1724,6 +1984,14 @@ def main():
         render_situations()
     elif page == "⏭️ Avanzar":
         render_advance_week()
+    elif page == "📚 Scout":
+        render_scout_reports()
+    elif page == "🏢 Contactar Clubes":
+        render_contact_clubs()
+    elif page == "⚽ Playoff Internacional":
+        render_international_playoff()
+    elif page == "🎖️ Estado del Agente":
+        render_agent_status()
 
 if __name__ == "__main__":
     main()
