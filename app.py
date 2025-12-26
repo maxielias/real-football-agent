@@ -5,6 +5,13 @@ Deploy to Streamlit Cloud for free sharing
 
 import streamlit as st
 from game import FootballAgentGame
+from agent import Agent
+from game_data import (
+    create_initial_players,
+    create_player_reports,
+    get_default_clubs,
+    get_international_clubs,
+)
 import time
 
 # Page config
@@ -56,30 +63,33 @@ if 'game_started' not in st.session_state:
 if 'selected_page' not in st.session_state:
     st.session_state.selected_page = "🏠 Inicio"
 
-def init_game(agent_name, agent_type):
-    """Initialize new game"""
+def init_game(agent_name, agent_type_display):
+    """Initialize new game (headless, without input prompts)"""
+    # Map display type to internal type
+    type_map = {
+        "THE FATHER": "Father",
+        "THE SHARK": "Shark",
+        "THE DIPLOMAT": "Diplomat",
+        "BALANCED": "Balanced",
+    }
+    agent_type = type_map.get(agent_type_display, "Balanced")
+
+    # Create game and agent
     game = FootballAgentGame()
-    game.agent.name = agent_name
-    
-    # Set agent type bonuses
-    if agent_type == "THE FATHER":
-        game.agent.money = 45000
-        game.agent.max_actions = 6
-        game.agent.commission_rate = 0.03
-    elif agent_type == "THE SHARK":
-        game.agent.money = 60000
-        game.agent.max_actions = 4
-        game.agent.commission_rate = 0.08
-    elif agent_type == "THE DIPLOMAT":
-        game.agent.money = 50000
-        game.agent.max_actions = 5
-        game.agent.commission_rate = 0.05
-    else:  # BALANCED
-        game.agent.money = 50000
-        game.agent.max_actions = 5
-        game.agent.commission_rate = 0.05
-    
-    game.agent.actions_remaining = game.agent.max_actions
+    game.agent = Agent(agent_name, agent_type)
+
+    # Initialize core game data (mirrors start_game, but headless)
+    game.all_players = create_initial_players()
+    game.available_reports = create_player_reports()
+    game.clubs = get_default_clubs()
+    game.international_clubs = get_international_clubs()
+    game.schedule = game._build_season_schedule()
+    game.total_weeks = len(game.schedule)
+    game._init_league_table()
+    game.club_index = {c.name: c for c in game.clubs}
+    game._init_club_rosters()
+
+    # Persist game in session
     st.session_state.game = game
     st.session_state.game_started = True
 
@@ -101,7 +111,7 @@ def render_sidebar():
                 st.metric("📅 Semana", game.agent.week)
             with col2:
                 st.metric("👥 Clientes", len(game.agent.clients))
-                st.metric("⚡ Acciones", f"{game.agent.actions_remaining}/{game.agent.max_actions}")
+                st.metric("⚡ Acciones", f"{game.agent.actions_remaining}/{game.agent.actions_per_week}")
             
             st.markdown("---")
             
@@ -156,7 +166,7 @@ def render_home():
         with col3:
             st.metric("📅 Semana", game.agent.week)
         with col4:
-            st.metric("⚡ Acciones", f"{game.agent.actions_remaining}/{game.agent.max_actions}")
+            st.metric("⚡ Acciones", f"{game.agent.actions_remaining}/{game.agent.actions_per_week}")
         
         st.markdown("---")
         
@@ -815,8 +825,14 @@ def render_advance_week():
     
     if st.button("⏭️ Avanzar a la Siguiente Semana", type="primary", use_container_width=True):
         with st.spinner("Procesando semana..."):
-            game.advance_week()
-        
+            # Headless advance without input prompts
+            current_week_index = game.agent.week - 1
+            game._simulate_week_fixtures(current_week_index)
+            game._simulate_client_match_participation(current_week_index)
+            game._process_weekly_player_growth(current_week_index)
+            game.event_occurred_this_week = False
+            game.agent.advance_week()
+
         st.success("¡Semana avanzada!")
         time.sleep(1)
         st.session_state.selected_page = "📝 Reportes"
