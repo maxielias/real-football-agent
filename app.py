@@ -818,7 +818,7 @@ def render_advance_week():
     game = st.session_state.game
     
     st.markdown(f"### Semana Actual: {game.agent.week}")
-    st.markdown(f"**Acciones restantes:** {game.agent.actions_remaining}/{game.agent.max_actions}")
+    st.markdown(f"**Acciones restantes:** {game.agent.actions_remaining}/{game.agent.actions_per_week}")
     
     if game.agent.actions_remaining > 0:
         st.warning(f"⚠️ Tienes {game.agent.actions_remaining} acciones sin usar")
